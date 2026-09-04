@@ -1,0 +1,6 @@
+{
+  "name": "GST Compliance OS",
+  "description": "Multi-tenant SaaS workflow application for Chartered Accountant (CA) firms to manage clients, track GST reconciliations, and streamline compliance operations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
