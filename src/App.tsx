@@ -41,9 +41,21 @@ import { validateGSTIN, extractPANFromGSTIN, validatePAN } from '@/lib/validatio
 import { ReconciliationView } from '@/components/reconciliation/ReconciliationView';
 import { Uploader } from '@/components/documents/Uploader';
 import { createClient } from '@/utils/supabase/client';
+import { ClientProvider, useClient } from '@/context/ClientContext';
+import { ClientSwitcher } from '@/components/ClientSwitcher';
 
 export default function App() {
+  return (
+    <ClientProvider>
+      <AppInternal />
+    </ClientProvider>
+  );
+}
+
+function AppInternal() {
+  const { selectedClientId, setSelectedClientId } = useClient();
   const [currentRoute, setCurrentRoute] = useState<'landing' | 'login' | 'signup' | 'onboarding' | 'dashboard'>('landing');
+
   const [activeTab, setActiveTab] = useState<'dashboard' | 'clients' | 'documents' | 'reconciliation'>('dashboard');
   const [firmName, setFirmName] = useState('Kapur & Associates, CAs');
   const [onboardingInput, setOnboardingInput] = useState('');
@@ -76,7 +88,7 @@ export default function App() {
       created_at: '2023-09-18T00:00:00.000Z',
     },
   ]);
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  // selectedClientId managed via useClient()
   const [clientWorkspaceTab, setClientWorkspaceTab] = useState<'overview' | 'documents' | 'reconciliation'>('overview');
   const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
   const [newClientName, setNewClientName] = useState('');
@@ -661,8 +673,8 @@ export default function App() {
       {currentRoute === 'dashboard' && (
         <div className="flex-1 bg-slate-50 flex flex-col font-sans text-slate-900">
           {/* Top Header */}
-          <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sm:px-8 shrink-0 sticky top-0 z-30">
-            <div className="flex items-center gap-3">
+          <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sm:px-8 shrink-0 sticky top-0 z-30 gap-4">
+            <div className="flex items-center gap-3 shrink-0">
               <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700">
                 <Building2 className="w-4 h-4" />
               </div>
@@ -674,7 +686,17 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
+            {/* Central Client Workspace Switcher Header */}
+            <div className="flex-1 max-w-md flex justify-center">
+              <ClientSwitcher
+                onOpenNewClientModal={() => {
+                  setActiveTab('clients');
+                  setIsAddClientModalOpen(true);
+                }}
+              />
+            </div>
+
+            <div className="flex items-center gap-4 shrink-0">
               <div className="hidden sm:flex items-center gap-2 text-xs font-medium text-slate-600">
                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
                 <span>Supabase Connected</span>

@@ -3,7 +3,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Users, FileText, FileSpreadsheet } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, FileSpreadsheet, Building2, CheckCircle2, Mail, Scale, CalendarClock, FileCheck } from 'lucide-react';
+import { useClient } from '@/context/ClientContext';
 
 interface SidebarNavProps {
   firmName?: string;
@@ -11,7 +12,15 @@ interface SidebarNavProps {
 }
 
 export function SidebarNav({ firmName = 'CA Practice', role = 'owner' }: SidebarNavProps) {
-  const pathname = usePathname();
+  let pathname = '';
+  try {
+    pathname = usePathname() || '';
+  } catch {
+    if (typeof window !== 'undefined') {
+      pathname = window.location.pathname;
+    }
+  }
+  const { selectedClient } = useClient();
 
   const navItems = [
     {
@@ -21,10 +30,16 @@ export function SidebarNav({ firmName = 'CA Practice', role = 'owner' }: Sidebar
       active: pathname === '/dashboard',
     },
     {
+      label: 'Compliance Tracker',
+      href: '/dashboard/compliance',
+      icon: CalendarClock,
+      active: pathname.startsWith('/dashboard/compliance'),
+    },
+    {
       label: 'Clients',
       href: '/dashboard/clients',
       icon: Users,
-      active: pathname.startsWith('/dashboard/clients'),
+      active: pathname.startsWith('/dashboard/clients') && !pathname.includes('/clients/'),
     },
     {
       label: 'Documents',
@@ -37,6 +52,24 @@ export function SidebarNav({ firmName = 'CA Practice', role = 'owner' }: Sidebar
       href: '/dashboard/reconciliation',
       icon: FileSpreadsheet,
       active: pathname.startsWith('/dashboard/reconciliation'),
+    },
+    {
+      label: 'Vendor Notices',
+      href: '/dashboard/communications',
+      icon: Mail,
+      active: pathname.startsWith('/dashboard/communications'),
+    },
+    {
+      label: 'Scrutiny & ASMT-10',
+      href: '/dashboard/scrutiny',
+      icon: Scale,
+      active: pathname.startsWith('/dashboard/scrutiny'),
+    },
+    {
+      label: 'Audit Reports & Dossiers',
+      href: '/dashboard/reports',
+      icon: FileCheck,
+      active: pathname.startsWith('/dashboard/reports'),
     },
   ];
 
@@ -82,10 +115,34 @@ export function SidebarNav({ firmName = 'CA Practice', role = 'owner' }: Sidebar
           );
         })}
 
+        {/* Active Client Workspace Context Card */}
+        {selectedClient && (
+          <div className="mt-4 p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">
+                Scoped Client
+              </span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            </div>
+            <Link
+              href={`/dashboard/clients/${selectedClient.id}`}
+              className="block group"
+            >
+              <div className="font-semibold text-xs text-slate-900 truncate group-hover:text-indigo-600 transition-colors">
+                {selectedClient.name}
+              </div>
+              <div className="text-[10px] font-mono text-slate-500 mt-0.5 truncate">
+                {selectedClient.gstin}
+              </div>
+            </Link>
+          </div>
+        )}
+
         {/* Security & RLS Partition Status Card */}
         <div className="mt-auto p-3.5 bg-slate-900 text-white rounded-xl">
-          <div className="text-[11px] font-semibold text-indigo-400 mb-0.5 uppercase tracking-wider">
-            RLS Protected
+          <div className="text-[11px] font-semibold text-indigo-400 mb-0.5 uppercase tracking-wider flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+            <span>RLS Protected</span>
           </div>
           <p className="text-[11px] text-slate-300 leading-snug">
             All data isolated to {firmName}.
@@ -95,3 +152,4 @@ export function SidebarNav({ firmName = 'CA Practice', role = 'owner' }: Sidebar
     </div>
   );
 }
+

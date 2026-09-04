@@ -7,7 +7,12 @@ import { createClient } from '@/utils/supabase/client';
 import { Button } from '@/components/ui/button';
 
 export function LogOutButton() {
-  const router = useRouter();
+  let router: any = null;
+  try {
+    router = useRouter();
+  } catch {
+    // Fallback if router context is unmounted
+  }
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   async function handleSignOut() {
@@ -15,11 +20,19 @@ export function LogOutButton() {
     try {
       const supabase = createClient();
       await supabase.auth.signOut();
-      router.push('/login');
-      router.refresh();
+      if (router?.push) {
+        router.push('/login');
+        router.refresh?.();
+      } else if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
     } catch (err) {
       console.error('Error signing out:', err);
-      router.push('/login');
+      if (router?.push) {
+        router.push('/login');
+      } else if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
     } finally {
       setIsLoggingOut(false);
     }

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useTransition } from 'react';
+import Link from 'next/link';
 import {
   RefreshCw,
   AlertTriangle,
@@ -26,6 +27,7 @@ import {
   Copy,
   Check,
   Lightbulb,
+  Mail,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -38,6 +40,7 @@ import {
 } from '@/app/dashboard/clients/[id]/reconcile-actions';
 
 interface ReconciliationViewProps {
+  key?: React.Key;
   clientId: string;
   clientName: string;
   clientGstin: string;
@@ -362,6 +365,12 @@ export function ReconciliationView({
               {summary.itcDifference > 1.0 ? (
                 <span className="font-semibold text-rose-700">
                   Books exceed GSTR-2B by {formatINR(summary.itcDifference)} (At risk of Sec 16(2)(aa) notice)
+                  <Link
+                    href="/dashboard/scrutiny"
+                    className="inline-flex items-center gap-1 font-bold text-rose-800 hover:text-rose-950 underline ml-1.5"
+                  >
+                    Open Defense Studio &rarr;
+                  </Link>
                 </span>
               ) : summary.itcDifference < -1.0 ? (
                 <span className="font-semibold text-amber-700">
@@ -762,6 +771,14 @@ export function ReconciliationView({
                                       <RefreshCw className="w-3 h-3" />
                                       <span>Re-analyze</span>
                                     </Button>
+
+                                    <Link
+                                      href={`/dashboard/communications?vendor=${encodeURIComponent(item.supplier_gstin)}`}
+                                      className="inline-flex items-center gap-1 text-xs h-7 px-2.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-2xs transition-colors"
+                                    >
+                                      <Mail className="w-3 h-3" />
+                                      <span>Issue Notice</span>
+                                    </Link>
                                   </div>
                                 </div>
 
@@ -788,14 +805,23 @@ export function ReconciliationView({
                                     </div>
                                   </div>
                                 </div>
-                                <Button
-                                  onClick={(e) => handleAnalyzeException(item.id, e)}
-                                  disabled={isAnalyzing}
-                                  className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs h-8 px-3.5 shrink-0 gap-1.5 shadow-xs cursor-pointer"
-                                >
-                                  <Sparkles className="w-3.5 h-3.5" />
-                                  <span>✨ Analyze with AI</span>
-                                </Button>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <Link
+                                    href={`/dashboard/communications?vendor=${encodeURIComponent(item.supplier_gstin)}`}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold shadow-xs transition-colors"
+                                  >
+                                    <Mail className="w-3.5 h-3.5 text-slate-600" />
+                                    <span>Issue Notice</span>
+                                  </Link>
+                                  <Button
+                                    onClick={(e) => handleAnalyzeException(item.id, e)}
+                                    disabled={isAnalyzing}
+                                    className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs h-8 px-3.5 shrink-0 gap-1.5 shadow-xs cursor-pointer"
+                                  >
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                    <span>✨ Analyze with AI</span>
+                                  </Button>
+                                </div>
                               </div>
                             )}
                           </td>

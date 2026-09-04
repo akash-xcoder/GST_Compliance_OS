@@ -22,11 +22,21 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Link href="/dashboard/reports">
+            <Button variant="outline" className="border-emerald-300 text-emerald-800 hover:bg-emerald-50 rounded-lg font-semibold text-xs shadow-xs gap-1.5">
+              <span>Audit Dossiers &amp; UDIN &rarr;</span>
+            </Button>
+          </Link>
+          <Link href="/dashboard/compliance">
+            <Button variant="outline" className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-lg font-semibold text-xs shadow-xs gap-1.5">
+              <span>Deadlines &amp; Calendar &rarr;</span>
+            </Button>
+          </Link>
           <Link href="/dashboard/clients">
-            <Button className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-sm shadow-sm gap-1.5">
+            <Button className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-xs shadow-sm gap-1.5">
               <Plus className="w-4 h-4" />
-              <span>New Client Registration</span>
+              <span>New Client</span>
             </Button>
           </Link>
         </div>

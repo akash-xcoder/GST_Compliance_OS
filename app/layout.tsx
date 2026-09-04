@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Metadata } from 'next';
 import '@/src/index.css';
+import { ClientProvider } from '@/context/ClientContext';
 
 export const metadata: Metadata = {
   title: 'GST Compliance OS | CA Firm Management & Reconciliation',
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full bg-slate-50">
       <body className="min-h-full font-sans antialiased text-slate-900 selection:bg-blue-100 selection:text-blue-900">
-        {children}
+        <ClientProvider>
+          {children}
+        </ClientProvider>
       </body>
     </html>
   );
