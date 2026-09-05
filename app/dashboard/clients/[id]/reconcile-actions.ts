@@ -4,15 +4,13 @@ import { createClient } from '@/utils/supabase/server';
 import Decimal from 'decimal.js';
 import { google } from '@ai-sdk/google';
 import { generateText } from 'ai';
+import { revalidatePath } from 'next/cache';
 
 async function safeRevalidatePath(path: string) {
-  if (typeof window === 'undefined') {
-    try {
-      const { revalidatePath } = await import('next/cache');
-      revalidatePath(path);
-    } catch {
-      // Ignored
-    }
+  try {
+    revalidatePath(path);
+  } catch {
+    // Ignored
   }
 }
 
