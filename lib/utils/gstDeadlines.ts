@@ -344,7 +344,7 @@ export function getFallbackStatutoryFilings(clients: Array<{ id: string; name: s
       gstin: client.gstin,
     });
 
-    // Client 0 (Acme Corp): GSTR-1 Filed, GSTR-3B in Data Preparation
+    // Entity Variation 0: GSTR-1 Filed, GSTR-3B in Data Preparation
     if (index === 0) {
       filings.push({
         id: `filing-${client.id}-g1-aug`,
@@ -395,7 +395,7 @@ export function getFallbackStatutoryFilings(clients: Array<{ id: string; name: s
       });
     }
 
-    // Client 1 (Beta Tech): GSTR-1 Pending Client Approval, GSTR-3B Not Started
+    // Entity Variation 1: GSTR-1 Pending Client Approval, GSTR-3B Not Started
     else if (index === 1) {
       filings.push({
         id: `filing-${client.id}-g1-aug`,
@@ -442,7 +442,7 @@ export function getFallbackStatutoryFilings(clients: Array<{ id: string; name: s
       });
     }
 
-    // Client 2 (Acme Manufacturing / QRMP): Both Filed on time
+    // Entity Variation 2 (QRMP): Both Filed on time
     else if (index === 2) {
       filings.push({
         id: `filing-${client.id}-g1-aug`,
@@ -489,7 +489,7 @@ export function getFallbackStatutoryFilings(clients: Array<{ id: string; name: s
       });
     }
 
-    // Client 3 (Horizon Logistics): OVERDUE for July 2026 GSTR-3B (Creates realistic urgent action trigger!)
+    // Entity Variation 3: OVERDUE for July GSTR-3B (Creates realistic urgent action trigger!)
     else {
       // Overdue July 3B (due 20 August 2026, 15 days overdue by Sept 4)
       const lateFeeJuly = calculateEstimatedLateFee({

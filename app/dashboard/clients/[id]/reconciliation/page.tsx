@@ -38,12 +38,7 @@ export default async function ClientReconciliationPage({ params }: PageProps) {
   }
 
   // 3. Fetch client details
-  let client = {
-    id,
-    name: 'Acme Manufacturing Ltd.',
-    gstin: '27AAAAA0000A1Z5',
-    pan: 'AAAAA0000A',
-  };
+  let client: { id: string; name: string; gstin: string; pan: string } | null = null;
 
   try {
     const { data: clientRow } = await supabase
@@ -58,6 +53,10 @@ export default async function ClientReconciliationPage({ params }: PageProps) {
     }
   } catch (err) {
     console.error('Error fetching client for reconciliation:', err);
+  }
+
+  if (!client) {
+    redirect('/dashboard/clients');
   }
 
   // 4. Pre-fetch initial reconciliation data (October 2023)

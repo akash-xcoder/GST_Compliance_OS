@@ -47,12 +47,33 @@ export default function ClientSwitcher({ className = '', onOpenNewClientModal }:
           }
         }}
       >
-        {clients.map((client) => (
-          <option key={client.id} value={client.id} className="bg-slate-900 text-white">
-            {client.name} ({client.gstin})
+        {clients.length === 0 ? (
+          <option value="" disabled className="bg-slate-900 text-slate-400">
+            No clients registered
           </option>
-        ))}
+        ) : (
+          clients.map((client) => (
+            <option key={client.id} value={client.id} className="bg-slate-900 text-white">
+              {client.name} ({client.gstin})
+            </option>
+          ))
+        )}
       </select>
+      {clients.length === 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            if (onOpenNewClientModal) {
+              onOpenNewClientModal();
+            } else if (router) {
+              router.push('/dashboard/clients');
+            }
+          }}
+          className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-0.5 rounded font-medium transition-colors whitespace-nowrap"
+        >
+          + Add
+        </button>
+      )}
     </div>
   );
 }

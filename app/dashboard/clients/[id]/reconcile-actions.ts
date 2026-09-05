@@ -542,9 +542,15 @@ export async function getReconciliationData(
     console.warn('Could not query database invoices directly:', err);
   }
 
-  // Fallback to realistic seed invoices if none exist in DB yet
+  // Return actual empty state if no records in DB
   if (invoices.length === 0) {
-    invoices = getDefaultSeedInvoices(clientId, periodMonth, periodYear);
+    const emptyResult = executeDeterministicMatching([]);
+    return {
+      success: true,
+      summary: emptyResult.summary,
+      exceptions: [],
+      matchedInvoices: [],
+    };
   }
 
   const { summary, exceptions, matchedInvoices } = executeDeterministicMatching(invoices);
@@ -614,9 +620,16 @@ export async function runReconciliation(
     console.warn('Database query error in runReconciliation:', err);
   }
 
-  // Fallback to deterministic seed dataset if no records are in the DB yet
+  // If no records exist in DB for this period, return empty result
   if (rawInvoices.length === 0) {
-    rawInvoices = getDefaultSeedInvoices(clientId, periodMonth, periodYear);
+    const emptyResult = executeDeterministicMatching([]);
+    return {
+      success: true,
+      message: 'No invoices found for this tax period. Please upload invoices in Documents tab.',
+      summary: emptyResult.summary,
+      exceptions: [],
+      matchedInvoices: [],
+    };
   }
 
   // 3. Execute strict deterministic matching

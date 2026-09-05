@@ -66,57 +66,9 @@ export default async function ClientWorkspacePage({ params }: PageProps) {
     console.error('Error fetching client:', err);
   }
 
-  // If client record not found by parameter ID, look up an existing client for this firm or seed a real DB record
+  // If client record not found, redirect back to clients list
   if (!client) {
-    try {
-      const { data: existingClient } = await supabase
-        .from('clients')
-        .select('id, firm_id, name, gstin, pan, created_at')
-        .eq('firm_id', realFirmId)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      if (existingClient) {
-        client = {
-          ...existingClient,
-          firm_id: existingClient.firm_id || realFirmId,
-        };
-      } else {
-        // Create an authentic client record in the database for this firm to guarantee real database UUIDs
-        const { data: newClient } = await supabase
-          .from('clients')
-          .insert({
-            firm_id: realFirmId,
-            name: 'Acme Manufacturing Ltd.',
-            gstin: '27AAAAA0000A1Z5',
-            pan: 'AAAAA0000A',
-          })
-          .select('id, firm_id, name, gstin, pan, created_at')
-          .single();
-
-        if (newClient) {
-          client = {
-            ...newClient,
-            firm_id: newClient.firm_id || realFirmId,
-          };
-        }
-      }
-    } catch (fallbackErr) {
-      console.error('Error finding or creating real client record:', fallbackErr);
-    }
-  }
-
-  // Guaranteed fallback ensuring valid UUIDs
-  if (!client) {
-    client = {
-      id: id && id.length > 20 ? id : realFirmId,
-      firm_id: realFirmId,
-      name: 'Acme Manufacturing Ltd.',
-      gstin: '27AAAAA0000A1Z5',
-      pan: 'AAAAA0000A',
-      created_at: new Date().toISOString(),
-    };
+    redirect('/dashboard/clients');
   }
 
   // 5. Fetch documents for this client partitioned by firm

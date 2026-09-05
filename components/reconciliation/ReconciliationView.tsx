@@ -833,6 +833,21 @@ export function ReconciliationView({
               </tbody>
             </table>
           </div>
+        ) : summary.totalBooksCount === 0 && summary.total2bCount === 0 ? (
+          <div className="py-12 text-center flex flex-col items-center justify-center">
+            <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center mb-3">
+              <FileSpreadsheet className="w-6 h-6" />
+            </div>
+            <h5 className="font-semibold text-slate-800 text-sm">No Invoices Uploaded for this Period</h5>
+            <p className="text-xs text-slate-500 max-w-sm mt-1 mb-4">
+              Upload Purchase Register (Books) and GSTR-2B portal returns for this tax period to run deterministic reconciliation.
+            </p>
+            <Link href="/dashboard/documents">
+              <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold">
+                Upload Invoices &amp; Files
+              </Button>
+            </Link>
+          </div>
         ) : (
           <div className="py-12 text-center flex flex-col items-center justify-center">
             <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">

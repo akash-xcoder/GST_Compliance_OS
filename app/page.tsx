@@ -1,8 +1,18 @@
 import Link from 'next/link';
 import { ArrowRight, FileSpreadsheet, Users, Cpu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { createClient } from '@/utils/supabase/server';
 
-export default function HomePage() {
+export const dynamic = 'force-dynamic';
+
+export default async function HomePage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const isLoggedIn = Boolean(user);
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 font-sans text-slate-900">
       {/* Top Header */}
@@ -25,17 +35,29 @@ export default function HomePage() {
               <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
               <span>Supabase Connected</span>
             </div>
-            <Link href="/login">
-              <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900">
-                Sign In
-              </Button>
-            </Link>
-            <Link href="/dashboard">
-              <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5 font-semibold">
-                <span>Go to Dashboard</span>
-                <ArrowRight className="w-4 h-4" />
-              </Button>
-            </Link>
+
+            {isLoggedIn ? (
+              <Link href="/dashboard">
+                <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5 font-semibold">
+                  <span>Go to Dashboard</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </Link>
+            ) : (
+              <>
+                <Link href="/login">
+                  <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900">
+                    Sign In
+                  </Button>
+                </Link>
+                <Link href="/signup">
+                  <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5 font-semibold">
+                    <span>Get Started</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -56,17 +78,28 @@ export default function HomePage() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-16">
-            <Link href="/dashboard" className="w-full sm:w-auto">
-              <Button size="lg" className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white gap-2 text-base px-6 font-semibold shadow-sm">
-                <span>Go to Dashboard</span>
-                <ArrowRight className="w-4 h-4" />
-              </Button>
-            </Link>
-            <Link href="/login" className="w-full sm:w-auto">
-              <Button size="lg" variant="outline" className="w-full sm:w-auto border-slate-200 text-slate-700 hover:bg-white text-base font-semibold">
-                Sign In to CA Portal
-              </Button>
-            </Link>
+            {isLoggedIn ? (
+              <Link href="/dashboard" className="w-full sm:w-auto">
+                <Button size="lg" className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white gap-2 text-base px-6 font-semibold shadow-sm">
+                  <span>Go to Dashboard</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </Link>
+            ) : (
+              <>
+                <Link href="/signup" className="w-full sm:w-auto">
+                  <Button size="lg" className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white gap-2 text-base px-6 font-semibold shadow-sm">
+                    <span>Get Started</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </Link>
+                <Link href="/login" className="w-full sm:w-auto">
+                  <Button size="lg" variant="outline" className="w-full sm:w-auto border-slate-200 text-slate-700 hover:bg-white text-base font-semibold">
+                    Sign In to CA Portal
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Architecture Capabilities Grid */}

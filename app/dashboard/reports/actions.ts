@@ -39,76 +39,7 @@ let runtimeDossierArchive: ArchivedDossierRecord[] = [];
  * Seed initial sample archive if empty
  */
 function getInitialArchiveSeed(): ArchivedDossierRecord[] {
-  return [
-    {
-      id: 'dossier-arch-001',
-      firm_id: 'default-firm',
-      client_id: '7ed6ea05-df68-49a4-bfa4-aeaba84d29ca',
-      client_name: 'Acme Manufacturing Ltd.',
-      client_gstin: '27AAAAA0000A1Z5',
-      financial_year: '2024-25',
-      report_title: 'Annual GST Reconciliation & Statutory Assessment Dossier (GSTR-9C)',
-      report_status: 'Approved_and_Signed',
-      opinion_type: 'Unqualified (True & Fair)',
-      turnover_books: 48500000,
-      turnover_gstr1: 48500000,
-      turnover_variance: 0,
-      itc_books: 8450000,
-      itc_gstr2b: 8450000,
-      itc_rule36_4_exposure: 0,
-      scrutiny_exposure: 0,
-      partner_name: 'CA Rajesh Kapur, FCA',
-      partner_membership_no: '108429',
-      udin: '25108429AAAAAA4912',
-      signed_at: '2025-11-20T14:30:00.000Z',
-      created_at: '2025-11-18T10:15:00.000Z',
-    },
-    {
-      id: 'dossier-arch-002',
-      firm_id: 'default-firm',
-      client_id: '00000000-0000-0000-0000-000000000003',
-      client_name: 'Horizon Logistics LLP',
-      client_gstin: '19BBBBB1111B2Z6',
-      financial_year: '2024-25',
-      report_title: 'Annual GST Reconciliation & Statutory Assessment Dossier (GSTR-9C)',
-      report_status: 'Under_Partner_Review',
-      opinion_type: 'Qualified (Subject to Discrepancies)',
-      turnover_books: 31200000,
-      turnover_gstr1: 30900000,
-      turnover_variance: -300000,
-      itc_books: 5600000,
-      itc_gstr2b: 5240000,
-      itc_rule36_4_exposure: 360000,
-      scrutiny_exposure: 185000,
-      partner_name: 'CA Rajesh Kapur, FCA',
-      partner_membership_no: '108429',
-      udin: '25108429BBBBBB8819',
-      created_at: '2025-12-05T09:45:00.000Z',
-    },
-    {
-      id: 'dossier-arch-003',
-      firm_id: 'default-firm',
-      client_id: '00000000-0000-0000-0000-000000000004',
-      client_name: 'Stellar Global Solutions',
-      client_gstin: '08CCCCC2222C3Z7',
-      financial_year: '2023-24',
-      report_title: 'Annual GST Reconciliation & Statutory Assessment Dossier (GSTR-9C)',
-      report_status: 'Approved_and_Signed',
-      opinion_type: 'Unqualified (True & Fair)',
-      turnover_books: 62000000,
-      turnover_gstr1: 62000000,
-      turnover_variance: 0,
-      itc_books: 9800000,
-      itc_gstr2b: 9800000,
-      itc_rule36_4_exposure: 0,
-      scrutiny_exposure: 0,
-      partner_name: 'CA Rajesh Kapur, FCA',
-      partner_membership_no: '108429',
-      udin: '24108429CCCCCC1102',
-      signed_at: '2024-11-28T16:00:00.000Z',
-      created_at: '2024-11-25T11:20:00.000Z',
-    },
-  ];
+  return [];
 }
 
 /**
@@ -130,9 +61,6 @@ export async function getDossierArchiveRecordsAction(
     const { data, error } = await query;
 
     if (error || !data || data.length === 0) {
-      if (runtimeDossierArchive.length === 0) {
-        runtimeDossierArchive = getInitialArchiveSeed();
-      }
       const filtered = clientId
         ? runtimeDossierArchive.filter((d) => d.client_id === clientId)
         : runtimeDossierArchive;
@@ -144,7 +72,7 @@ export async function getDossierArchiveRecordsAction(
       firm_id: row.firm_id,
       client_id: row.client_id,
       client_name: row.metadata?.client_name || 'Client Entity',
-      client_gstin: row.metadata?.client_gstin || '27AAAAA0000A1Z5',
+      client_gstin: row.metadata?.client_gstin || '',
       financial_year: row.financial_year,
       report_title: row.report_title,
       report_status: row.report_status,
@@ -166,9 +94,6 @@ export async function getDossierArchiveRecordsAction(
     return { success: true, data: mapped };
   } catch (err: any) {
     console.error('Error fetching dossier archive:', err);
-    if (runtimeDossierArchive.length === 0) {
-      runtimeDossierArchive = getInitialArchiveSeed();
-    }
     return { success: true, data: runtimeDossierArchive };
   }
 }
@@ -243,20 +168,6 @@ export async function buildAnnualDossierReportAction({
     let advances = 420000;
     let creditNotes = 680000;
     let exemptTurnover = 1200000;
-
-    if (clientName.includes('Horizon')) {
-      grossBooks = 34500000;
-      unbilledRev = 400000;
-      advances = 150000;
-      creditNotes = 250000;
-      exemptTurnover = 800000;
-    } else if (clientName.includes('Stellar')) {
-      grossBooks = 78000000;
-      unbilledRev = 1200000;
-      advances = 650000;
-      creditNotes = 950000;
-      exemptTurnover = 2100000;
-    }
 
     const adjustedTurnoverBooks = grossBooks + unbilledRev + advances - creditNotes - exemptTurnover;
     const taxableTurnoverGstr1 = adjustedTurnoverBooks; // Matched for clean client

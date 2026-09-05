@@ -4,8 +4,12 @@ import '@/src/index.css';
 import { ClientProvider } from '@/context/ClientContext';
 
 export const metadata: Metadata = {
-  title: 'GST Compliance OS | CA Firm Management & Reconciliation',
-  description: 'Multi-tenant workflow OS for CA firms to manage clients, extract document data, and run deterministic GST reconciliations.',
+  title: 'GST Compliance OS',
+  description: 'Multi-tenant SaaS workflow application for Chartered Accountant (CA) firms to manage clients, track GST reconciliations, and streamline compliance operations.',
+  openGraph: {
+    title: 'GST Compliance OS',
+    description: 'Multi-tenant SaaS workflow application for Chartered Accountant (CA) firms to manage clients, track GST reconciliations, and streamline compliance operations.',
+  },
 };
 
 export default function RootLayout({

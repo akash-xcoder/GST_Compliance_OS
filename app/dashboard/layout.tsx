@@ -5,6 +5,7 @@ import { SidebarNav } from '@/components/SidebarNav';
 import { LogOutButton } from '@/components/LogOutButton';
 import { ClientSwitcher } from '@/components/ClientSwitcher';
 import { ClientProvider } from '@/context/ClientContext';
+import { FirstRunOnboardingModal } from '@/components/onboarding/FirstRunOnboardingModal';
 import { Building2 } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -67,8 +68,9 @@ export default async function DashboardLayout({
     <ClientProvider
       initialFirmId={membership.firm_id}
       initialFirmName={firmName}
-      initialClients={initialClients.length > 0 ? initialClients : undefined}
+      initialClients={initialClients}
     >
+      <FirstRunOnboardingModal />
       <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900 antialiased">
         {/* Left Sidebar Shell */}
         <aside className="w-64 bg-white border-r border-slate-200 flex flex-col shrink-0 min-h-screen sticky top-0 h-screen">

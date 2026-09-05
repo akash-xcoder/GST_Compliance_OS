@@ -1,9 +1,73 @@
 import React from 'react';
-import { Users, FileText, AlertTriangle, CheckCircle2, ArrowRight, Plus } from 'lucide-react';
+import { Users, FileText, AlertTriangle, CheckCircle2, ArrowRight, Plus, Upload, Building2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { createClient } from '@/utils/supabase/server';
 
-export default function DashboardPage() {
+export const dynamic = 'force-dynamic';
+
+export default async function DashboardPage() {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  let firmId: string | null = null;
+  let clientsCount = 0;
+  let documentsCount = 0;
+  let exceptionsCount = 0;
+  let reconciledCount = 0;
+  let clientsList: any[] = [];
+
+  if (user) {
+    const { data: membership } = await supabase
+      .from('firm_users')
+      .select('firm_id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    firmId = membership?.firm_id || null;
+
+    if (firmId) {
+      // 1. Fetch real clients count & list
+      const { data: clientsData, count: cCount } = await supabase
+        .from('clients')
+        .select('id, name, gstin, pan, created_at', { count: 'exact' })
+        .eq('firm_id', firmId)
+        .order('created_at', { ascending: false });
+
+      clientsCount = cCount || (clientsData ? clientsData.length : 0);
+      clientsList = clientsData || [];
+
+      // 2. Fetch documents count
+      const { count: dCount } = await supabase
+        .from('documents')
+        .select('*', { count: 'exact', head: true })
+        .eq('firm_id', firmId);
+
+      documentsCount = dCount || 0;
+
+      // 3. Fetch invoices / exception stats
+      const { count: eCount } = await supabase
+        .from('invoices')
+        .select('*', { count: 'exact', head: true })
+        .eq('firm_id', firmId)
+        .in('match_status', ['MISMATCH', 'MISSING_IN_BOOKS', 'MISSING_IN_2B']);
+
+      exceptionsCount = eCount || 0;
+
+      // 4. Fetch matched count
+      const { count: mCount } = await supabase
+        .from('invoices')
+        .select('*', { count: 'exact', head: true })
+        .eq('firm_id', firmId)
+        .eq('match_status', 'MATCHED');
+
+      reconciledCount = mCount || 0;
+    }
+  }
+
   return (
     <div className="flex flex-col gap-8 max-w-7xl">
       {/* Top Header section */}
@@ -13,8 +77,8 @@ export default function DashboardPage() {
             <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
               Compliance Overview
             </h2>
-            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded uppercase tracking-wider">
-              V1 Mockup
+            <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded uppercase tracking-wider border border-emerald-200">
+              Live Production
             </span>
           </div>
           <p className="text-slate-500 mt-1 text-sm">
@@ -42,7 +106,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 4 Required Metric Cards */}
+      {/* 4 Live Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {/* Card 1: Total Clients */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
@@ -54,26 +118,25 @@ export default function DashboardPage() {
               <Users className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-3xl font-bold mt-3 text-slate-900">42</p>
+          <p className="text-3xl font-bold mt-3 text-slate-900">{clientsCount}</p>
           <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 font-medium">
-            <span className="text-emerald-600 font-semibold">&uarr; 3</span>
-            <span>onboarded this month</span>
+            <span>Registered client organizations</span>
           </div>
         </div>
 
-        {/* Card 2: Pending Documents */}
+        {/* Card 2: Ingested Documents */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between">
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Pending Documents
+              Documents Ingested
             </p>
             <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
               <FileText className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-3xl font-bold mt-3 text-slate-900">18</p>
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 font-medium">
-            <span>Awaiting client upload / OCR</span>
+          <p className="text-3xl font-bold mt-3 text-slate-900">{documentsCount}</p>
+          <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+            <span>Purchase registers &amp; portal files</span>
           </div>
         </div>
 
@@ -87,120 +150,112 @@ export default function DashboardPage() {
               <AlertTriangle className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-3xl font-bold mt-3 text-slate-900">7</p>
+          <p className="text-3xl font-bold mt-3 text-slate-900">{exceptionsCount}</p>
           <div className="mt-2 flex items-center gap-1.5 text-xs text-rose-600 font-medium">
             <span>GSTR-2B vs. Books mismatches</span>
           </div>
         </div>
 
-        {/* Card 4: Ready to File */}
+        {/* Card 4: Reconciled Invoices */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between">
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              Ready to File
+              Reconciled Invoices
             </p>
             <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
               <CheckCircle2 className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-3xl font-bold mt-3 text-slate-900">25</p>
+          <p className="text-3xl font-bold mt-3 text-slate-900">{reconciledCount}</p>
           <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
-            <span>100% ITC reconciled</span>
+            <span>100% deterministic matches</span>
           </div>
         </div>
       </div>
 
-      {/* Critical Reconciliation Queue Table */}
+      {/* Client Audit Queue Table */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-xs flex flex-col overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
           <div>
-            <h3 className="font-bold text-slate-900 text-base">Critical Reconciliation Queue</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Deterministic 2B vs. Books comparison status</p>
+            <h3 className="font-bold text-slate-900 text-base">Client Organizations &amp; Audit Queue</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Live multi-entity reconciliation and compliance tracking</p>
           </div>
           <Link
-            href="/dashboard/reconciliation"
+            href="/dashboard/clients"
             className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold flex items-center gap-1"
           >
-            <span>View all audits</span>
+            <span>View all clients</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-slate-50 text-[11px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">
-              <tr>
-                <th className="px-6 py-3">Client Entity</th>
-                <th className="px-6 py-3">Period</th>
-                <th className="px-6 py-3">Logic Status</th>
-                <th className="px-6 py-3">Variance</th>
-                <th className="px-6 py-3">Action</th>
-              </tr>
-            </thead>
-            <tbody className="text-sm divide-y divide-slate-100">
-              <tr className="hover:bg-slate-50/80 transition-colors">
-                <td className="px-6 py-4">
-                  <div className="font-bold text-slate-900">Acme Manufacturing Ltd.</div>
-                  <div className="text-xs text-slate-500 font-mono">GSTIN: 27AAAAA0000A1Z5</div>
-                </td>
-                <td className="px-6 py-4 font-medium text-slate-700">Oct 2023</td>
-                <td className="px-6 py-4">
-                  <span className="px-2 py-1 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-bold uppercase tracking-wider">
-                    Matched
-                  </span>
-                </td>
-                <td className="px-6 py-4 font-mono text-xs font-semibold text-slate-800">&inr;0.00</td>
-                <td className="px-6 py-4">
-                  <Link
-                    href="/dashboard/reconciliation"
-                    className="text-indigo-600 hover:text-indigo-700 font-medium text-xs"
-                  >
-                    Draft Report
-                  </Link>
-                </td>
-              </tr>
-
-              <tr className="hover:bg-slate-50/80 transition-colors">
-                <td className="px-6 py-4">
-                  <div className="font-bold text-slate-900">Horizon Logistics LLP</div>
-                  <div className="text-xs text-slate-500 font-mono">GSTIN: 19BBBBB1111B2Z6</div>
-                </td>
-                <td className="px-6 py-4 font-medium text-slate-700">Oct 2023</td>
-                <td className="px-6 py-4">
-                  <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded-md text-[10px] font-bold uppercase tracking-wider">
-                    Missing PR
-                  </span>
-                </td>
-                <td className="px-6 py-4 font-mono text-xs font-semibold text-rose-600">&inr;4,25,900.00</td>
-                <td className="px-6 py-4">
-                  <Link
-                    href="/dashboard/reconciliation"
-                    className="text-indigo-600 hover:text-indigo-700 font-medium text-xs"
-                  >
-                    Nudge Client
-                  </Link>
-                </td>
-              </tr>
-
-              <tr className="hover:bg-slate-50/80 transition-colors">
-                <td className="px-6 py-4">
-                  <div className="font-bold text-slate-900">Stellar Global Solutions</div>
-                  <div className="text-xs text-slate-500 font-mono">GSTIN: 08CCCCC2222C3Z7</div>
-                </td>
-                <td className="px-6 py-4 font-medium text-slate-700">Sep 2023</td>
-                <td className="px-6 py-4">
-                  <span className="px-2 py-1 bg-indigo-100 text-indigo-800 rounded-md text-[10px] font-bold uppercase tracking-wider">
-                    AI Extracting
-                  </span>
-                </td>
-                <td className="px-6 py-4 font-mono text-xs text-slate-400">Calculating...</td>
-                <td className="px-6 py-4">
-                  <span className="text-slate-400 font-medium text-xs">Processing</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        {clientsList.length === 0 ? (
+          <div className="p-12 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-3">
+              <Building2 className="w-6 h-6" />
+            </div>
+            <h4 className="font-bold text-slate-900 text-base">No Client Organizations Registered</h4>
+            <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 mb-5">
+              Your practice workspace is clean. Onboard your first client organization to begin ingesting purchase registers, 2B portal returns, and generating audit dossiers.
+            </p>
+            <Link href="/dashboard/onboarding">
+              <Button className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 gap-1.5">
+                <Plus className="w-4 h-4" />
+                <span>Onboard First Client</span>
+              </Button>
+            </Link>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50 text-[11px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                <tr>
+                  <th className="px-6 py-3">Client Entity</th>
+                  <th className="px-6 py-3">GSTIN / PAN</th>
+                  <th className="px-6 py-3">Audit Workspace</th>
+                  <th className="px-6 py-3 text-right">Quick Actions</th>
+                </tr>
+              </thead>
+              <tbody className="text-sm divide-y divide-slate-100">
+                {clientsList.map((client) => (
+                  <tr key={client.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="font-bold text-slate-900">{client.name}</div>
+                      <div className="text-xs text-slate-400">
+                        Added on {new Date(client.created_at || Date.now()).toLocaleDateString('en-IN')}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="font-mono text-xs font-semibold text-slate-800">{client.gstin}</div>
+                      <div className="text-[11px] font-mono text-slate-400">PAN: {client.pan || 'N/A'}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md text-[10px] font-bold uppercase tracking-wider">
+                        Active Tenant
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Link
+                          href={`/dashboard/clients/${client.id}`}
+                          className="px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 border border-indigo-200 rounded-lg transition-colors"
+                        >
+                          Reconciliation
+                        </Link>
+                        <Link
+                          href={`/dashboard/documents`}
+                          className="px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
+                        >
+                          Upload Doc
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

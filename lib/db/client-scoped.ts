@@ -77,7 +77,7 @@ export async function getScopedClientDocuments(
 
   let query = supabase
     .from('documents')
-    .select('*')
+    .select('*, clients(name, trade_name)')
     .eq('client_id', clientId)
     .eq('firm_id', firmId);
 

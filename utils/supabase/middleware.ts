@@ -6,8 +6,8 @@ export async function updateSession(request: NextRequest) {
     request,
   });
 
-const supabaseUrl = 'https://ubbwdrfcwozimdhnqqpu.supabase.co';
-  const supabaseAnonKey = 'sb_publishable_3j3m-acOC78NobFiQOFwdQ_IkRPOf-o'; 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ubbwdrfcwozimdhnqqpu.supabase.co';
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_3j3m-acOC78NobFiQOFwdQ_IkRPOf-o'; 
 
   if (!supabaseUrl || !supabaseAnonKey) {
     // If environment variables are not yet configured, allow request to proceed

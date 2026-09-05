@@ -53,41 +53,36 @@ export default function App() {
 }
 
 function AppInternal() {
-  const { selectedClientId, setSelectedClientId } = useClient();
+  const {
+    clients,
+    loading: clientsLoading,
+    refreshClients,
+    selectedClientId,
+    setSelectedClientId,
+    selectedClient,
+    currentClient,
+    setCurrentClient,
+    firmName: contextFirmName,
+    setFirmName: setContextFirmName,
+    selectedFirmId,
+  } = useClient();
+
+  const activeClient =
+    selectedClient ||
+    currentClient ||
+    (selectedClientId ? clients.find((c) => c.id === selectedClientId) : null) ||
+    null;
+
   const [currentRoute, setCurrentRoute] = useState<'landing' | 'login' | 'signup' | 'onboarding' | 'dashboard'>('landing');
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'clients' | 'documents' | 'reconciliation'>('dashboard');
-  const [firmName, setFirmName] = useState('Kapur & Associates, CAs');
+  const [firmName, setFirmName] = useState(contextFirmName || 'Kapur & Associates, CAs');
   const [onboardingInput, setOnboardingInput] = useState('');
   const [onboardingError, setOnboardingError] = useState('');
 
   // Valid DB UUIDs default
   const [realFirmId, setRealFirmId] = useState<string>('a763af2b-c7ea-4a56-b448-513df5ca0dfa');
 
-  // Client Management States
-  const [clientsList, setClientsList] = useState([
-    {
-      id: '7ed6ea05-df68-49a4-bfa4-aeaba84d29ca',
-      name: 'Acme Manufacturing Ltd.',
-      gstin: '27AAAAA0000A1Z5',
-      pan: 'AAAAA0000A',
-      created_at: '2023-10-15T00:00:00.000Z',
-    },
-    {
-      id: '00000000-0000-0000-0000-000000000003',
-      name: 'Horizon Logistics LLP',
-      gstin: '19BBBBB1111B2Z6',
-      pan: 'BBBBB1111B',
-      created_at: '2023-10-01T00:00:00.000Z',
-    },
-    {
-      id: '00000000-0000-0000-0000-000000000004',
-      name: 'Stellar Global Solutions',
-      gstin: '08CCCCC2222C3Z7',
-      pan: 'CCCCC2222C',
-      created_at: '2023-09-18T00:00:00.000Z',
-    },
-  ]);
   // selectedClientId managed via useClient()
   const [clientWorkspaceTab, setClientWorkspaceTab] = useState<'overview' | 'documents' | 'reconciliation'>('overview');
   const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
@@ -102,6 +97,8 @@ function AppInternal() {
   interface AppDocument {
     id: string;
     client_id: string;
+    client_name?: string;
+    client_trade_name?: string;
     firm_id: string;
     storage_path: string;
     doc_type: string;
@@ -113,53 +110,23 @@ function AppInternal() {
     created_at: string;
   }
 
-  const [documents, setDocuments] = useState<AppDocument[]>([
-    {
-      id: 'doc-1',
-      client_id: '7ed6ea05-df68-49a4-bfa4-aeaba84d29ca',
-      firm_id: 'a763af2b-c7ea-4a56-b448-513df5ca0dfa',
-      storage_path: 'a763af2b-c7ea-4a56-b448-513df5ca0dfa/7ed6ea05-df68-49a4-bfa4-aeaba84d29ca/2023/10/purchase_register_1697112000000_PR_Oct2023_Final.xlsx',
-      doc_type: 'Purchase Register',
-      period_month: 10,
-      period_year: 2023,
-      file_name: 'PR_Oct2023_Final.xlsx',
-      file_size: 245760,
-      status: 'uploaded',
-      created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
-    },
-    {
-      id: 'doc-2',
-      client_id: '7ed6ea05-df68-49a4-bfa4-aeaba84d29ca',
-      firm_id: 'a763af2b-c7ea-4a56-b448-513df5ca0dfa',
-      storage_path: 'a763af2b-c7ea-4a56-b448-513df5ca0dfa/7ed6ea05-df68-49a4-bfa4-aeaba84d29ca/2023/10/gstr_2b_1697198400000_GSTR2B_Oct2023_Portal.json',
-      doc_type: 'GSTR-2B',
-      period_month: 10,
-      period_year: 2023,
-      file_name: 'GSTR2B_Oct2023_Portal.json',
-      file_size: 512000,
-      status: 'uploaded',
-      created_at: new Date(Date.now() - 1 * 86400000).toISOString(),
-    },
-    {
-      id: 'doc-3',
-      client_id: '00000000-0000-0000-0000-000000000003',
-      firm_id: 'a763af2b-c7ea-4a56-b448-513df5ca0dfa',
-      storage_path: 'a763af2b-c7ea-4a56-b448-513df5ca0dfa/00000000-0000-0000-0000-000000000003/2023/10/sales_register_1697284800000_Sales_Oct23.xlsx',
-      doc_type: 'Sales Register',
-      period_month: 10,
-      period_year: 2023,
-      file_name: 'Sales_Oct23.xlsx',
-      file_size: 184320,
-      status: 'uploaded',
-      created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
-    },
-  ]);
+  const [documents, setDocuments] = useState<AppDocument[]>([]);
+  const [exceptionsCount, setExceptionsCount] = useState<number>(0);
+  const [reconciledCount, setReconciledCount] = useState<number>(0);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
-  // Load real firm_id, clients, and documents from Supabase
+  // Load real firm_id, clients, documents, and invoice stats from Supabase with relational join
   React.useEffect(() => {
     async function loadSupabaseData() {
       try {
         const supabase = createClient();
+
+        // Check active session / user
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        setCurrentUser(user || null);
+
         const { data: firmUser } = await supabase.from('firm_users').select('firm_id').single();
         let targetFirmId = firmUser?.firm_id;
 
@@ -167,7 +134,10 @@ function AppInternal() {
           const { data: anyFirm } = await supabase.from('firms').select('id, name').limit(1).maybeSingle();
           if (anyFirm?.id) {
             targetFirmId = anyFirm.id;
-            if (anyFirm.name) setFirmName(anyFirm.name);
+            if (anyFirm.name) {
+              setFirmName(anyFirm.name);
+              setContextFirmName(anyFirm.name);
+            }
           }
         }
 
@@ -175,48 +145,64 @@ function AppInternal() {
           setRealFirmId(targetFirmId);
 
           const { data: firmInfo } = await supabase.from('firms').select('name').eq('id', targetFirmId).maybeSingle();
-          if (firmInfo?.name) setFirmName(firmInfo.name);
-
-          const { data: dbClients } = await supabase
-            .from('clients')
-            .select('id, name, gstin, pan, created_at')
-            .eq('firm_id', targetFirmId)
-            .order('created_at', { ascending: false });
-
-          if (dbClients && dbClients.length > 0) {
-            setClientsList(dbClients);
+          if (firmInfo?.name) {
+            setFirmName(firmInfo.name);
+            setContextFirmName(firmInfo.name);
           }
+        }
 
-          const { data: dbDocs } = await supabase
-            .from('documents')
-            .select('*')
-            .eq('firm_id', targetFirmId)
-            .order('created_at', { ascending: false });
+        await refreshClients();
 
-          if (dbDocs && dbDocs.length > 0) {
-            setDocuments(
-              dbDocs.map((d: any) => ({
+        // Fetch documents
+        const { data: dbDocs } = await supabase
+          .from('documents')
+          .select('*, clients(name, trade_name)')
+          .order('created_at', { ascending: false });
+
+        if (dbDocs && dbDocs.length > 0) {
+          setDocuments(
+            dbDocs.map((d: any) => {
+              const clientJoin = Array.isArray(d.clients) ? d.clients[0] : d.clients;
+              return {
                 id: d.id,
                 client_id: d.client_id,
+                client_name: clientJoin?.name || clientJoin?.trade_name || '',
+                client_trade_name: clientJoin?.trade_name || '',
                 firm_id: d.firm_id,
                 storage_path: d.storage_path || '',
                 doc_type: d.doc_type || 'Purchase Register',
                 period_month: d.period_month || 10,
                 period_year: d.period_year || 2023,
-                file_name: d.file_name || 'document',
+                file_name: d.file_name || (d.storage_path ? d.storage_path.split('/').pop() : 'document'),
                 file_size: d.file_size || 0,
                 status: d.status || 'uploaded',
                 created_at: d.created_at || new Date().toISOString(),
-              }))
-            );
-          }
+              };
+            })
+          );
+        } else {
+          setDocuments([]);
         }
+
+        // Fetch live invoice exception counts
+        const { count: eCount } = await supabase
+          .from('invoices')
+          .select('*', { count: 'exact', head: true })
+          .in('match_status', ['MISMATCH', 'MISSING_IN_BOOKS', 'MISSING_IN_2B']);
+        setExceptionsCount(eCount || 0);
+
+        // Fetch live reconciled/matched counts
+        const { count: mCount } = await supabase
+          .from('invoices')
+          .select('*', { count: 'exact', head: true })
+          .eq('match_status', 'MATCHED');
+        setReconciledCount(mCount || 0);
       } catch (err) {
         console.warn('Supabase initial fetch in App.tsx:', err);
       }
     }
     loadSupabaseData();
-  }, []);
+  }, [refreshClients, setContextFirmName]);
 
   const [uploadDocType, setUploadDocType] = useState('Purchase Register');
   const [uploadMonth, setUploadMonth] = useState(10);
@@ -321,17 +307,30 @@ function AppInternal() {
                   <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
                   <span>Supabase Connected</span>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => setCurrentRoute('login')} className="text-slate-600 hover:text-slate-900">
-                  Sign In
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => setCurrentRoute('dashboard')}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5 font-semibold shadow-sm"
-                >
-                  <span>Go to Dashboard</span>
-                  <ArrowRight className="w-4 h-4" />
-                </Button>
+                {currentUser ? (
+                  <Button
+                    size="sm"
+                    onClick={() => setCurrentRoute('dashboard')}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5 font-semibold shadow-sm"
+                  >
+                    <span>Go to Dashboard</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                ) : (
+                  <>
+                    <Button variant="ghost" size="sm" onClick={() => setCurrentRoute('login')} className="text-slate-600 hover:text-slate-900">
+                      Sign In
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => setCurrentRoute('signup')}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white gap-1.5 font-semibold shadow-sm"
+                    >
+                      <span>Get Started</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           </header>
@@ -351,22 +350,35 @@ function AppInternal() {
               </p>
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-16">
-                <Button
-                  size="lg"
-                  onClick={() => setCurrentRoute('dashboard')}
-                  className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white gap-2 text-base px-6 font-semibold shadow-sm"
-                >
-                  <span>Go to Dashboard</span>
-                  <ArrowRight className="w-4 h-4" />
-                </Button>
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={() => setCurrentRoute('login')}
-                  className="w-full sm:w-auto border-slate-200 text-slate-700 hover:bg-white text-base font-semibold"
-                >
-                  Sign In to CA Portal
-                </Button>
+                {currentUser ? (
+                  <Button
+                    size="lg"
+                    onClick={() => setCurrentRoute('dashboard')}
+                    className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white gap-2 text-base px-6 font-semibold shadow-sm"
+                  >
+                    <span>Go to Dashboard</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      size="lg"
+                      onClick={() => setCurrentRoute('signup')}
+                      className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white gap-2 text-base px-6 font-semibold shadow-sm"
+                    >
+                      <span>Get Started</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      onClick={() => setCurrentRoute('login')}
+                      className="w-full sm:w-auto border-slate-200 text-slate-700 hover:bg-white text-base font-semibold"
+                    >
+                      Sign In to CA Portal
+                    </Button>
+                  </>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 text-left border-t border-slate-200 pt-10">
@@ -804,12 +816,9 @@ function AppInternal() {
                     <div>
                       <div className="flex items-center gap-2">
                         <h2 className="text-3xl font-bold text-slate-900">Compliance Overview</h2>
-                        <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded uppercase tracking-wider">
-                          V1 Mockup
-                        </span>
                       </div>
                       <p className="text-slate-500 mt-1 text-sm">
-                        Managed compliance for 42 active client entities under {firmName}
+                        Managed compliance for {clients.length} active client {clients.length === 1 ? 'entity' : 'entities'} under {firmName}
                       </p>
                     </div>
                     <Button
@@ -832,9 +841,9 @@ function AppInternal() {
                           <Users className="w-4 h-4" />
                         </div>
                       </div>
-                      <p className="text-3xl font-bold mt-2 text-slate-900">42</p>
-                      <div className="mt-2 flex items-center gap-1 text-xs text-emerald-600 font-medium">
-                        <span>&uarr; 3 onboarded this month</span>
+                      <p className="text-3xl font-bold mt-2 text-slate-900">{clients.length}</p>
+                      <div className="mt-2 flex items-center gap-1 text-xs text-slate-500 font-medium">
+                        <span>Registered client entities</span>
                       </div>
                     </div>
 
@@ -848,7 +857,9 @@ function AppInternal() {
                           <FileText className="w-4 h-4" />
                         </div>
                       </div>
-                      <p className="text-3xl font-bold mt-2 text-slate-900">18</p>
+                      <p className="text-3xl font-bold mt-2 text-slate-900">
+                        {documents.filter((d) => d.status === 'uploaded' || d.status === 'processing').length}
+                      </p>
                       <div className="mt-2 flex items-center gap-1 text-xs text-amber-600 font-medium">
                         <span>Awaiting client upload / OCR</span>
                       </div>
@@ -864,7 +875,7 @@ function AppInternal() {
                           <ShieldCheck className="w-4 h-4" />
                         </div>
                       </div>
-                      <p className="text-3xl font-bold mt-2 text-slate-900">7</p>
+                      <p className="text-3xl font-bold mt-2 text-slate-900">{exceptionsCount}</p>
                       <div className="mt-2 flex items-center gap-1 text-xs text-rose-600 font-medium">
                         <span>GSTR-2B vs. Books mismatches</span>
                       </div>
@@ -880,7 +891,7 @@ function AppInternal() {
                           <CheckCircle2 className="w-4 h-4" />
                         </div>
                       </div>
-                      <p className="text-3xl font-bold mt-2 text-slate-900">25</p>
+                      <p className="text-3xl font-bold mt-2 text-slate-900">{reconciledCount}</p>
                       <div className="mt-2 flex items-center gap-1 text-xs text-emerald-600 font-medium">
                         <span>100% ITC reconciled</span>
                       </div>
@@ -915,66 +926,44 @@ function AppInternal() {
                           </tr>
                         </thead>
                         <tbody className="text-sm divide-y divide-slate-50">
-                          <tr className="hover:bg-slate-50 cursor-default transition-colors">
-                            <td className="px-6 py-4">
-                              <div className="font-bold text-slate-900">Acme Manufacturing Ltd.</div>
-                              <div className="text-xs text-slate-500 font-mono">GSTIN: 27AAAAA0000A1Z5</div>
-                            </td>
-                            <td className="px-6 py-4 font-medium text-slate-700">Oct 2023</td>
-                            <td className="px-6 py-4">
-                              <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-md text-[10px] font-bold uppercase tracking-wider">
-                                Matched
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 font-mono text-xs font-semibold text-slate-800">&inr;0.00</td>
-                            <td className="px-6 py-4">
-                              <span
-                                onClick={() => setActiveTab('reconciliation')}
-                                className="text-indigo-600 hover:text-indigo-700 font-medium text-xs cursor-pointer"
-                              >
-                                Draft Report
-                              </span>
-                            </td>
-                          </tr>
-
-                          <tr className="hover:bg-slate-50 cursor-default transition-colors">
-                            <td className="px-6 py-4">
-                              <div className="font-bold text-slate-900">Horizon Logistics LLP</div>
-                              <div className="text-xs text-slate-500 font-mono">GSTIN: 19BBBBB1111B2Z6</div>
-                            </td>
-                            <td className="px-6 py-4 font-medium text-slate-700">Oct 2023</td>
-                            <td className="px-6 py-4">
-                              <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded-md text-[10px] font-bold uppercase tracking-wider">
-                                Missing PR
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 font-mono text-xs font-semibold text-rose-500">&inr;4,25,900.00</td>
-                            <td className="px-6 py-4">
-                              <span
-                                onClick={() => setActiveTab('reconciliation')}
-                                className="text-indigo-600 hover:text-indigo-700 font-medium text-xs cursor-pointer"
-                              >
-                                Nudge Client
-                              </span>
-                            </td>
-                          </tr>
-
-                          <tr className="hover:bg-slate-50 cursor-default transition-colors">
-                            <td className="px-6 py-4">
-                              <div className="font-bold text-slate-900">Stellar Global Solutions</div>
-                              <div className="text-xs text-slate-500 font-mono">GSTIN: 08CCCCC2222C3Z7</div>
-                            </td>
-                            <td className="px-6 py-4 font-medium text-slate-700">Sep 2023</td>
-                            <td className="px-6 py-4">
-                              <span className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded-md text-[10px] font-bold uppercase tracking-wider">
-                                AI Extracting
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 font-mono text-xs text-slate-400">Calculating...</td>
-                            <td className="px-6 py-4">
-                              <span className="text-slate-400 font-medium text-xs">Processing</span>
-                            </td>
-                          </tr>
+                          {clients.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                                <div className="flex flex-col items-center justify-center gap-2">
+                                  <Building2 className="w-8 h-8 text-slate-300" />
+                                  <p className="text-sm font-semibold text-slate-700">No client reconciliations queued</p>
+                                  <p className="text-xs text-slate-400">Add a client organization to start tracking compliance and variance.</p>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : (
+                            clients.map((client) => (
+                              <tr key={client.id} className="hover:bg-slate-50 cursor-default transition-colors">
+                                <td className="px-6 py-4">
+                                  <div className="font-bold text-slate-900">{client.name}</div>
+                                  <div className="text-xs text-slate-500 font-mono">GSTIN: {client.gstin}</div>
+                                </td>
+                                <td className="px-6 py-4 font-medium text-slate-700">Current Period</td>
+                                <td className="px-6 py-4">
+                                  <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-md text-[10px] font-bold uppercase tracking-wider">
+                                    Active
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 font-mono text-xs font-semibold text-slate-800">&inr;0.00</td>
+                                <td className="px-6 py-4">
+                                  <span
+                                    onClick={() => {
+                                      setSelectedClientId(client.id);
+                                      setActiveTab('reconciliation');
+                                    }}
+                                    className="text-indigo-600 hover:text-indigo-700 font-medium text-xs cursor-pointer"
+                                  >
+                                    Draft Report
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -987,8 +976,18 @@ function AppInternal() {
                   {selectedClientId ? (
                     // Client Workspace Shell
                     (() => {
-                      const selectedClient = clientsList.find((c) => c.id === selectedClientId) || clientsList[0];
-                      const stateCode = selectedClient.gstin.slice(0, 2);
+                      const selectedClient = clients.find((c) => c.id === selectedClientId) || currentClient || clients[0];
+                      if (!selectedClient) {
+                        return (
+                          <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-xs">
+                            <Building2 className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                            <h3 className="text-base font-bold text-slate-800">No Client Selected</h3>
+                            <p className="text-xs text-slate-500 mt-1 mb-4">Select or register a client entity to view its workspace.</p>
+                            <Button onClick={() => setSelectedClientId(null)} size="sm">Back to Clients Roster</Button>
+                          </div>
+                        );
+                      }
+                      const stateCode = selectedClient.gstin ? selectedClient.gstin.slice(0, 2) : '27';
 
                       return (
                         <div className="flex flex-col gap-6 max-w-7xl">
@@ -1569,7 +1568,7 @@ function AppInternal() {
                               Client Organizations
                             </h2>
                             <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded uppercase tracking-wider">
-                              {clientsList.length} Entities
+                              {clients.length} Entities
                             </span>
                           </div>
                           <p className="text-slate-500 mt-1 text-sm">
@@ -1625,19 +1624,57 @@ function AppInternal() {
                               </tr>
                             </thead>
                             <tbody className="text-sm divide-y divide-slate-100">
-                              {clientsList
-                                .filter(
+                              {(() => {
+                                const filteredClients = clients.filter(
                                   (c) =>
                                     c.name.toLowerCase().includes(clientSearchQuery.toLowerCase()) ||
                                     c.gstin.toLowerCase().includes(clientSearchQuery.toLowerCase()) ||
                                     c.pan.toLowerCase().includes(clientSearchQuery.toLowerCase())
-                                )
-                                .map((client) => {
-                                  const formattedDate = new Date(client.created_at).toLocaleDateString('en-IN', {
-                                    day: 'numeric',
-                                    month: 'short',
-                                    year: 'numeric',
-                                  });
+                                );
+
+                                if (filteredClients.length === 0) {
+                                  return (
+                                    <tr>
+                                      <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                                        <div className="flex flex-col items-center justify-center gap-2">
+                                          <Building2 className="w-8 h-8 text-slate-300" />
+                                          <p className="text-sm font-semibold text-slate-700">
+                                            {clientSearchQuery ? 'No matching clients found' : 'No client organizations registered yet'}
+                                          </p>
+                                          <p className="text-xs text-slate-400">
+                                            {clientSearchQuery
+                                              ? `No client matched "${clientSearchQuery}".`
+                                              : `Add your first taxpayer entity to start GST compliance and reconciliation.`}
+                                          </p>
+                                          {!clientSearchQuery && (
+                                            <Button
+                                              onClick={() => {
+                                                setAddClientError('');
+                                                setNewClientName('');
+                                                setNewClientGstin('');
+                                                setNewClientPan('');
+                                                setIsAddClientModalOpen(true);
+                                              }}
+                                              className="mt-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-xs gap-1.5 cursor-pointer"
+                                            >
+                                              <Plus className="w-3.5 h-3.5" />
+                                              <span>Register First Client</span>
+                                            </Button>
+                                          )}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                }
+
+                                return filteredClients.map((client) => {
+                                  const formattedDate = client.created_at
+                                    ? new Date(client.created_at).toLocaleDateString('en-IN', {
+                                        day: 'numeric',
+                                        month: 'short',
+                                        year: 'numeric',
+                                      })
+                                    : 'Recent';
 
                                   return (
                                     <tr key={client.id} className="hover:bg-slate-50/80 transition-colors">
@@ -1703,8 +1740,17 @@ function AppInternal() {
                                                 Confirm?
                                               </span>
                                               <button
-                                                onClick={() => {
-                                                  setClientsList((prev) => prev.filter((c) => c.id !== client.id));
+                                                onClick={async () => {
+                                                  try {
+                                                    const supabase = createClient();
+                                                    await supabase.from('clients').delete().eq('id', client.id);
+                                                    await refreshClients();
+                                                    if (selectedClientId === client.id) {
+                                                      setSelectedClientId(null);
+                                                    }
+                                                  } catch (err) {
+                                                    console.warn('Error deleting client from Supabase:', err);
+                                                  }
                                                   setDeleteConfirmId(null);
                                                 }}
                                                 className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-semibold cursor-pointer"
@@ -1733,7 +1779,8 @@ function AppInternal() {
                                       </td>
                                     </tr>
                                   );
-                                })}
+                                });
+                              })()}
                             </tbody>
                           </table>
                         </div>
@@ -1792,38 +1839,33 @@ function AppInternal() {
                             }
 
                             // Check duplicate GSTIN
-                            if (clientsList.some((c) => c.gstin === newClientGstin)) {
+                            if (clients.some((c) => c.gstin === newClientGstin)) {
                               setAddClientError(`A client with GSTIN ${newClientGstin} already exists in your firm.`);
                               return;
                             }
 
-                            let newId = crypto.randomUUID();
                             try {
                               const supabase = createClient();
-                              const { data: createdRow } = await supabase.from('clients').insert({
-                                firm_id: realFirmId,
+                              const { data: createdRow, error: insertError } = await supabase.from('clients').insert({
+                                firm_id: selectedFirmId || realFirmId,
                                 name: newClientName.trim(),
                                 gstin: newClientGstin,
                                 pan: derivedPan,
                               }).select('id').single();
-                              if (createdRow?.id) {
-                                newId = createdRow.id;
+
+                              if (insertError) {
+                                setAddClientError(insertError.message || 'Failed to register client entity.');
+                                return;
                               }
-                            } catch (err) {
-                              console.warn('Could not insert client directly to DB in App.tsx:', err);
+
+                              await refreshClients();
+                              if (createdRow?.id) {
+                                setSelectedClientId(createdRow.id);
+                              }
+                              setIsAddClientModalOpen(false);
+                            } catch (err: any) {
+                              setAddClientError(err?.message || 'Failed to create client entity.');
                             }
-
-                            const newEntity = {
-                              id: newId,
-                              name: newClientName.trim(),
-                              gstin: newClientGstin,
-                              pan: derivedPan,
-                              created_at: new Date().toISOString(),
-                            };
-
-                            setClientsList((prev) => [newEntity, ...prev]);
-                            setSelectedClientId(newEntity.id);
-                            setIsAddClientModalOpen(false);
                           }}
                           className="mt-5 space-y-4"
                         >
@@ -1964,184 +2006,306 @@ function AppInternal() {
                     </div>
                   </div>
 
-                  <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-100">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-bold text-slate-900 text-base">All Client Uploads</h3>
-                        <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold">
-                          {documents.length} files
-                        </span>
+                  {!activeClient ? (
+                    <div className="p-10 text-center bg-white border border-slate-200 rounded-2xl shadow-xs">
+                      <div className="max-w-md mx-auto flex flex-col items-center">
+                        <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-3">
+                          <Building2 className="w-6 h-6 text-indigo-600" />
+                        </div>
+                        <h3 className="font-bold text-slate-900 text-lg">No Active Client Selected</h3>
+                        <p className="text-sm text-slate-500 mt-1 mb-6">
+                          Please select an active client from the registered entities below or top workspace selector to view compliance documents.
+                        </p>
+                        {clients && clients.length > 0 ? (
+                          <div className="w-full space-y-2">
+                            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-left">
+                              Select Client Entity:
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-left">
+                              {clients.map((c) => (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  onClick={() => setSelectedClientId(c.id)}
+                                  className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/40 text-left transition-all group cursor-pointer"
+                                >
+                                  <div>
+                                    <p className="font-semibold text-xs text-slate-900 group-hover:text-indigo-700">
+                                      {c.name}
+                                    </p>
+                                    <p className="text-[11px] font-mono text-slate-400">{c.gstin}</p>
+                                  </div>
+                                  <ArrowRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-indigo-600 transition-colors" />
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <Button
+                            onClick={() => {
+                              setActiveTab('clients');
+                              setIsAddClientModalOpen(true);
+                            }}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-sm gap-2 cursor-pointer"
+                          >
+                            <Plus className="w-4 h-4" />
+                            <span>Add New Client</span>
+                          </Button>
+                        )}
                       </div>
-
-                      <div className="flex items-center gap-3">
-                        <div className="relative">
-                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                          <input
-                            type="text"
-                            placeholder="Search by filename or client..."
-                            value={docSearchQuery}
-                            onChange={(e) => setDocSearchQuery(e.target.value)}
-                            className="pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full sm:w-60"
-                          />
+                    </div>
+                  ) : (
+                    <>
+                      {/* Active Client Context Banner */}
+                      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
+                            {activeClient.name.substring(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded uppercase tracking-wider">
+                                Active Client Workspace
+                              </span>
+                              <span className="text-xs text-slate-400 font-mono">ID: {activeClient.id.substring(0, 8)}...</span>
+                            </div>
+                            <h3 className="text-base font-bold text-slate-900 mt-0.5">{activeClient.name}</h3>
+                            <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
+                              <span>GSTIN: <strong className="font-mono text-slate-700">{activeClient.gstin}</strong></span>
+                              {activeClient.pan && (
+                                <>
+                                  <span>&bull;</span>
+                                  <span>PAN: <strong className="font-mono text-slate-700">{activeClient.pan}</strong></span>
+                                </>
+                              )}
+                            </div>
+                          </div>
                         </div>
 
-                        <select
-                          value={docFilter}
-                          onChange={(e) => setDocFilter(e.target.value)}
-                          className="px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-700 cursor-pointer"
-                        >
-                          <option value="all">All Document Types</option>
-                          <option value="Purchase Register">Purchase Register</option>
-                          <option value="Sales Register">Sales Register</option>
-                          <option value="GSTR-2B">GSTR-2B</option>
-                          <option value="Invoice PDF">Invoice PDF</option>
-                        </select>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedClientId(null);
+                              setCurrentClient(null);
+                            }}
+                            className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+                          >
+                            Change Client
+                          </button>
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="overflow-x-auto mt-4">
-                      <table className="w-full text-left border-collapse text-xs">
-                        <thead>
-                          <tr className="border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold text-[11px] bg-slate-50/50">
-                            <th className="py-3 px-4 rounded-l-lg">Document Name</th>
-                            <th className="py-3 px-4">Client Entity</th>
-                            <th className="py-3 px-4">Type</th>
-                            <th className="py-3 px-4">Tax Period</th>
-                            <th className="py-3 px-4">Uploaded</th>
-                            <th className="py-3 px-4">Status</th>
-                            <th className="py-3 px-4 rounded-r-lg text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-slate-700">
-                          {documents
-                            .filter((doc) => docFilter === 'all' || doc.doc_type === docFilter)
-                            .filter((doc) => {
-                              const clientObj = clientsList.find((c) => c.id === doc.client_id);
-                              return (
-                                docSearchQuery === '' ||
-                                doc.file_name.toLowerCase().includes(docSearchQuery.toLowerCase()) ||
-                                doc.doc_type.toLowerCase().includes(docSearchQuery.toLowerCase()) ||
-                                (clientObj && clientObj.name.toLowerCase().includes(docSearchQuery.toLowerCase()))
-                              );
-                            })
-                            .map((doc) => {
-                              const clientObj = clientsList.find((c) => c.id === doc.client_id);
-                              const isExcel = doc.file_name.match(/\.(xlsx|xls|csv)$/i);
-                              const isPdf = doc.file_name.match(/\.pdf$/i);
+                      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-slate-900 text-base">Client Compliance Vault</h3>
+                            <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold">
+                              {documents.length} files
+                            </span>
+                          </div>
 
-                              return (
-                                <tr key={doc.id} className="hover:bg-slate-50/70 transition-colors">
-                                  <td className="py-3.5 px-4">
-                                    <div className="flex items-center gap-3">
-                                      <div
-                                        className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                                          isExcel
-                                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                                            : isPdf
-                                            ? 'bg-rose-50 text-rose-700 border border-rose-100'
-                                            : 'bg-purple-50 text-purple-700 border border-purple-100'
-                                        }`}
-                                      >
-                                        {isExcel ? (
-                                          <FileSpreadsheet className="w-4 h-4" />
-                                        ) : isPdf ? (
-                                          <FileText className="w-4 h-4" />
-                                        ) : (
-                                          <FileSpreadsheet className="w-4 h-4" />
-                                        )}
-                                      </div>
-                                      <div>
-                                        <p className="font-semibold text-slate-900">{doc.file_name}</p>
-                                        <p className="text-[11px] text-slate-400 font-mono">
-                                          {(doc.file_size / 1024).toFixed(1)} KB
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </td>
+                          <div className="flex items-center gap-3">
+                            <div className="relative">
+                              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                              <input
+                                type="text"
+                                placeholder="Search by filename or client..."
+                                value={docSearchQuery}
+                                onChange={(e) => setDocSearchQuery(e.target.value)}
+                                className="pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-full sm:w-60"
+                              />
+                            </div>
 
-                                  <td className="py-3.5 px-4">
-                                    <button
-                                      onClick={() => {
-                                        setSelectedClientId(doc.client_id);
-                                        setClientWorkspaceTab('documents');
-                                        setActiveTab('clients');
-                                      }}
-                                      className="font-medium text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
-                                    >
-                                      {clientObj?.name || doc.client_id}
-                                    </button>
-                                  </td>
+                            <select
+                              value={docFilter}
+                              onChange={(e) => setDocFilter(e.target.value)}
+                              className="px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-700 cursor-pointer"
+                            >
+                              <option value="all">All Document Types</option>
+                              <option value="Purchase Register">Purchase Register</option>
+                              <option value="Sales Register">Sales Register</option>
+                              <option value="GSTR-2B">GSTR-2B</option>
+                              <option value="Invoice PDF">Invoice PDF</option>
+                            </select>
+                          </div>
+                        </div>
 
-                                  <td className="py-3.5 px-4 whitespace-nowrap">
-                                    <span
-                                      className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${
-                                        doc.doc_type === 'Purchase Register'
-                                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                          : doc.doc_type === 'Sales Register'
-                                          ? 'bg-blue-50 text-blue-800 border-blue-200'
-                                          : doc.doc_type === 'GSTR-2B'
-                                          ? 'bg-purple-50 text-purple-800 border-purple-200'
-                                          : 'bg-rose-50 text-rose-800 border-rose-200'
-                                      }`}
-                                    >
-                                      {doc.doc_type}
-                                    </span>
-                                  </td>
+                        <div className="overflow-x-auto mt-4">
+                          <table className="w-full text-left border-collapse text-xs">
+                            <thead>
+                              <tr className="border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold text-[11px] bg-slate-50/50">
+                                <th className="py-3 px-4 rounded-l-lg">Document Name</th>
+                                <th className="py-3 px-4">Client Entity</th>
+                                <th className="py-3 px-4">Type</th>
+                                <th className="py-3 px-4">Tax Period</th>
+                                <th className="py-3 px-4">Uploaded</th>
+                                <th className="py-3 px-4">Status</th>
+                                <th className="py-3 px-4 rounded-r-lg text-right">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-slate-700">
+                              {documents
+                                .filter((doc) => docFilter === 'all' || doc.doc_type === docFilter)
+                                .filter((doc) => {
+                                  const clientObj = clients.find((c) => c.id === doc.client_id);
+                                  const clientDisplayName = doc.client_name || doc.client_trade_name || clientObj?.name || clientObj?.trade_name || '';
+                                  return (
+                                    docSearchQuery === '' ||
+                                    doc.file_name.toLowerCase().includes(docSearchQuery.toLowerCase()) ||
+                                    doc.doc_type.toLowerCase().includes(docSearchQuery.toLowerCase()) ||
+                                    clientDisplayName.toLowerCase().includes(docSearchQuery.toLowerCase()) ||
+                                    (doc.client_trade_name && doc.client_trade_name.toLowerCase().includes(docSearchQuery.toLowerCase()))
+                                  );
+                                })
+                                .map((doc) => {
+                                  const clientObj = clients.find((c) => c.id === doc.client_id);
+                                  const clientDisplayName = doc.client_name || doc.client_trade_name || clientObj?.name || clientObj?.trade_name || activeClient?.name || 'Taxpayer Entity';
+                                  const clientTradeName = doc.client_trade_name || clientObj?.trade_name;
+                                  const isExcel = doc.file_name.match(/\.(xlsx|xls|csv)$/i);
+                                  const isPdf = doc.file_name.match(/\.pdf$/i);
 
-                                  <td className="py-3.5 px-4 whitespace-nowrap">
-                                    <span className="font-mono text-[11px] text-slate-600">
-                                      Month {String(doc.period_month).padStart(2, '0')}/{doc.period_year}
-                                    </span>
-                                  </td>
+                                  return (
+                                    <tr key={doc.id} className="hover:bg-slate-50/70 transition-colors">
+                                      <td className="py-3.5 px-4">
+                                        <div className="flex items-center gap-3">
+                                          <div
+                                            className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                                              isExcel
+                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                                : isPdf
+                                                ? 'bg-rose-50 text-rose-700 border border-rose-100'
+                                                : 'bg-purple-50 text-purple-700 border border-purple-100'
+                                            }`}
+                                          >
+                                            {isExcel ? (
+                                              <FileSpreadsheet className="w-4 h-4" />
+                                            ) : isPdf ? (
+                                              <FileText className="w-4 h-4" />
+                                            ) : (
+                                              <FileSpreadsheet className="w-4 h-4" />
+                                            )}
+                                          </div>
+                                          <div>
+                                            <p className="font-semibold text-slate-900">{doc.file_name}</p>
+                                            <p className="text-[11px] text-slate-400 font-mono">
+                                              {(doc.file_size / 1024).toFixed(1)} KB
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </td>
 
-                                  <td className="py-3.5 px-4 whitespace-nowrap text-slate-500 font-mono text-[11px]">
-                                    {new Date(doc.created_at).toLocaleDateString('en-IN', {
-                                      day: '2-digit',
-                                      month: 'short',
-                                    })}
-                                  </td>
+                                      <td className="py-3.5 px-4">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedClientId(doc.client_id);
+                                            setClientWorkspaceTab('documents');
+                                            setActiveTab('clients');
+                                          }}
+                                          className="font-medium text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer text-left"
+                                        >
+                                          <span className="block font-semibold">{clientDisplayName}</span>
+                                          {clientTradeName && clientTradeName !== clientDisplayName && (
+                                            <span className="block text-[10px] text-slate-400 font-normal">{clientTradeName}</span>
+                                          )}
+                                        </button>
+                                      </td>
 
-                                  <td className="py-3.5 px-4 whitespace-nowrap">
-                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                                      <span className="capitalize">{doc.status}</span>
-                                    </span>
-                                  </td>
+                                      <td className="py-3.5 px-4 whitespace-nowrap">
+                                        <span
+                                          className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                                            doc.doc_type === 'Purchase Register'
+                                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                              : doc.doc_type === 'Sales Register'
+                                              ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                              : doc.doc_type === 'GSTR-2B'
+                                              ? 'bg-purple-50 text-purple-800 border-purple-200'
+                                              : 'bg-rose-50 text-rose-800 border-rose-200'
+                                          }`}
+                                        >
+                                          {doc.doc_type}
+                                        </span>
+                                      </td>
 
-                                  <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => {
-                                        setSelectedClientId(doc.client_id);
-                                        setClientWorkspaceTab('documents');
-                                        setActiveTab('clients');
-                                      }}
-                                      className="text-xs h-7 gap-1"
-                                    >
-                                      <span>Workspace</span>
-                                      <ChevronRight className="w-3 h-3" />
-                                    </Button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                                      <td className="py-3.5 px-4 whitespace-nowrap">
+                                        <span className="font-mono text-[11px] text-slate-600">
+                                          Month {String(doc.period_month).padStart(2, '0')}/{doc.period_year}
+                                        </span>
+                                      </td>
+
+                                      <td className="py-3.5 px-4 whitespace-nowrap text-slate-500 font-mono text-[11px]">
+                                        {new Date(doc.created_at).toLocaleDateString('en-IN', {
+                                          day: '2-digit',
+                                          month: 'short',
+                                        })}
+                                      </td>
+
+                                      <td className="py-3.5 px-4 whitespace-nowrap">
+                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                                          <span className="capitalize">{doc.status}</span>
+                                        </span>
+                                      </td>
+
+                                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => {
+                                            setSelectedClientId(doc.client_id);
+                                            setClientWorkspaceTab('documents');
+                                            setActiveTab('clients');
+                                          }}
+                                          className="text-xs h-7 gap-1"
+                                        >
+                                          <span>Workspace</span>
+                                          <ChevronRight className="w-3 h-3" />
+                                        </Button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
               {activeTab === 'reconciliation' && (
                 <div className="flex flex-col gap-6 max-w-7xl">
-                  <ReconciliationView
-                    clientId={selectedClientId || clientsList[0]?.id || '7ed6ea05-df68-49a4-bfa4-aeaba84d29ca'}
-                    clientName={clientsList.find((c) => c.id === selectedClientId)?.name || clientsList[0]?.name || 'Acme Manufacturing Ltd.'}
-                    clientGstin={clientsList.find((c) => c.id === selectedClientId)?.gstin || clientsList[0]?.gstin || '27AAAAA0000A1Z5'}
-                    initialPeriodMonth={10}
-                    initialPeriodYear={2023}
-                  />
+                  {clients.length === 0 ? (
+                    <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-xs">
+                      <div className="max-w-md mx-auto flex flex-col items-center">
+                        <Building2 className="w-12 h-12 text-indigo-400 mb-3" />
+                        <h3 className="text-lg font-bold text-slate-800">No Clients Available</h3>
+                        <p className="text-sm text-slate-500 mt-1 mb-6">
+                          Please register a client organization in the Clients tab to start automated reconciliation.
+                        </p>
+                        <Button
+                          onClick={() => {
+                            setActiveTab('clients');
+                            setIsAddClientModalOpen(true);
+                          }}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-sm gap-2 cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add New Client</span>
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <ReconciliationView
+                      clientId={selectedClientId || currentClient?.id || clients[0]?.id || ''}
+                      clientName={currentClient?.name || clients.find((c) => c.id === selectedClientId)?.name || clients[0]?.name || ''}
+                      clientGstin={currentClient?.gstin || clients.find((c) => c.id === selectedClientId)?.gstin || clients[0]?.gstin || ''}
+                      initialPeriodMonth={10}
+                      initialPeriodYear={2023}
+                    />
+                  )}
                 </div>
               )}
             </main>

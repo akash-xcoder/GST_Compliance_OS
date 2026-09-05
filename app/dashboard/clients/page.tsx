@@ -25,7 +25,7 @@ export default async function ClientsPage() {
     .maybeSingle();
 
   if (!membership || membershipError) {
-    redirect('/onboarding');
+    redirect('/dashboard/onboarding');
   }
 
   // 3. Fetch Firm Details
@@ -47,51 +47,11 @@ export default async function ClientsPage() {
       .eq('firm_id', membership.firm_id)
       .order('created_at', { ascending: false });
 
-    if (!clientsError && clientRows && clientRows.length > 0) {
+    if (!clientsError && clientRows) {
       clients = clientRows;
-    } else {
-      // If table is newly created or empty, ensure real client record with DB UUID is seeded
-      try {
-        const { data: newClient } = await supabase
-          .from('clients')
-          .insert({
-            firm_id: membership.firm_id,
-            name: 'Acme Manufacturing Ltd.',
-            gstin: '27AAAAA0000A1Z5',
-            pan: 'AAAAA0000A',
-          })
-          .select('id, name, gstin, pan, created_at')
-          .single();
-
-        if (newClient) {
-          clients = [newClient];
-        }
-      } catch (seedErr) {
-        console.error('Error seeding initial client:', seedErr);
-      }
-
-      if (clients.length === 0) {
-        clients = [
-          {
-            id: membership.firm_id,
-            name: 'Acme Manufacturing Ltd.',
-            gstin: '27AAAAA0000A1Z5',
-            pan: 'AAAAA0000A',
-            created_at: new Date(Date.now() - 15 * 86400000).toISOString(),
-          },
-        ];
-      }
     }
-  } catch {
-    clients = [
-      {
-        id: membership?.firm_id || '7ed6ea05-df68-49a4-bfa4-aeaba84d29ca',
-        name: 'Acme Manufacturing Ltd.',
-        gstin: '27AAAAA0000A1Z5',
-        pan: 'AAAAA0000A',
-        created_at: new Date().toISOString(),
-      },
-    ];
+  } catch (err) {
+    console.warn('Notice fetching clients:', err);
   }
 
   return <ClientListClient initialClients={clients} firmName={firmName} />;

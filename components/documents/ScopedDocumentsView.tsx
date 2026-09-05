@@ -30,6 +30,8 @@ import { extractDocumentData } from '@/app/dashboard/clients/[id]/extract-action
 interface ScopedDocument {
   id: string;
   client_id: string;
+  client_name?: string;
+  client_trade_name?: string;
   firm_id: string;
   storage_path: string;
   doc_type: string;
@@ -42,7 +44,14 @@ interface ScopedDocument {
 }
 
 export function ScopedDocumentsView() {
-  const { selectedClient, selectedFirmId, firmName } = useClient();
+  const {
+    selectedClient,
+    selectedClientId,
+    setSelectedClientId,
+    clients,
+    selectedFirmId,
+    firmName,
+  } = useClient();
   const [documents, setDocuments] = useState<ScopedDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploaderOpen, setIsUploaderOpen] = useState(false);
@@ -55,72 +64,63 @@ export function ScopedDocumentsView() {
     message: string;
   } | null>(null);
 
-  // Fetch documents strictly scoped to active client
+  // Fetch documents with relational join for client name, strictly scoped to active client
   useEffect(() => {
     async function loadClientDocuments() {
       if (!selectedClient) {
         setIsLoading(false);
+        setDocuments([]);
         return;
       }
       setIsLoading(true);
       try {
         const supabase = createClient();
-        const { data, error } = await supabase
+        let query = supabase
           .from('documents')
-          .select('*')
-          .eq('client_id', selectedClient.id)
-          .eq('firm_id', selectedFirmId)
-          .order('created_at', { ascending: false });
+          .select('*, clients(name, trade_name)')
+          .eq('client_id', selectedClient.id);
+
+        if (selectedFirmId) {
+          query = query.eq('firm_id', selectedFirmId);
+        }
+
+        const { data, error } = await query.order('created_at', { ascending: false });
 
         if (!error && data && data.length > 0) {
           setDocuments(
-            data.map((d: any) => ({
-              id: d.id,
-              client_id: d.client_id,
-              firm_id: d.firm_id,
-              storage_path: d.storage_path || '',
-              doc_type: d.doc_type || 'Document',
-              period_month: d.period_month || 10,
-              period_year: d.period_year || 2023,
-              file_name: d.storage_path ? d.storage_path.split('/').pop() : 'compliance_doc',
-              file_size: d.file_size || 150000,
-              status: d.status || 'uploaded',
-              created_at: d.created_at || new Date().toISOString(),
-            }))
+            data.map((d: any) => {
+              const clientJoin = Array.isArray(d.clients) ? d.clients[0] : d.clients;
+              const joinedName =
+                clientJoin?.name ||
+                clientJoin?.trade_name ||
+                selectedClient.name ||
+                'Taxpayer Entity';
+              const joinedTradeName = clientJoin?.trade_name || '';
+
+              return {
+                id: d.id,
+                client_id: d.client_id,
+                client_name: joinedName,
+                client_trade_name: joinedTradeName,
+                firm_id: d.firm_id,
+                storage_path: d.storage_path || '',
+                doc_type: d.doc_type || 'Document',
+                period_month: d.period_month || 10,
+                period_year: d.period_year || 2023,
+                file_name: d.file_name || (d.storage_path ? d.storage_path.split('/').pop() : 'compliance_doc'),
+                file_size: d.file_size || 150000,
+                status: d.status || 'uploaded',
+                created_at: d.created_at || new Date().toISOString(),
+              };
+            })
           );
         } else {
-          // Provide realistic client-scoped seed documents
-          setDocuments([
-            {
-              id: `doc-${selectedClient.id}-pr`,
-              client_id: selectedClient.id,
-              firm_id: selectedFirmId,
-              storage_path: `${selectedFirmId}/${selectedClient.id}/2023/10/purchase_register_Oct23_${selectedClient.name.replace(/\s+/g, '_')}.xlsx`,
-              doc_type: 'Purchase Register',
-              period_month: 10,
-              period_year: 2023,
-              file_name: `PR_Oct2023_${selectedClient.name.substring(0, 8)}.xlsx`,
-              file_size: 245760,
-              status: 'extracted',
-              created_at: new Date(Date.now() - 3600000 * 24).toISOString(),
-            },
-            {
-              id: `doc-${selectedClient.id}-2b`,
-              client_id: selectedClient.id,
-              firm_id: selectedFirmId,
-              storage_path: `${selectedFirmId}/${selectedClient.id}/2023/10/gstr_2b_Oct23_${selectedClient.name.replace(/\s+/g, '_')}.json`,
-              doc_type: 'GSTR-2B',
-              period_month: 10,
-              period_year: 2023,
-              file_name: `GSTR2B_Oct2023_${selectedClient.name.substring(0, 8)}.json`,
-              file_size: 489120,
-              status: 'uploaded',
-              created_at: new Date(Date.now() - 3600000 * 12).toISOString(),
-            },
-          ]);
+          // Real empty state - no dummy documents
+          setDocuments([]);
         }
       } catch (e) {
         console.warn('Notice loading scoped documents:', e);
+        setDocuments([]);
       } finally {
         setIsLoading(false);
       }
@@ -130,7 +130,12 @@ export function ScopedDocumentsView() {
   }, [selectedClient, selectedFirmId]);
 
   const handleDocumentUploaded = (newDoc: any) => {
-    setDocuments((prev) => [newDoc, ...prev]);
+    const formattedDoc = {
+      ...newDoc,
+      client_name: newDoc.client_name || selectedClient?.name || 'Taxpayer Entity',
+      client_trade_name: newDoc.client_trade_name || selectedClient?.trade_name || '',
+    };
+    setDocuments((prev) => [formattedDoc, ...prev]);
     setIsUploaderOpen(false);
   };
 
@@ -191,12 +196,47 @@ export function ScopedDocumentsView() {
 
   if (!selectedClient) {
     return (
-      <div className="p-8 text-center bg-white border border-slate-200 rounded-2xl">
-        <Building2 className="w-10 h-10 text-indigo-500 mx-auto mb-3" />
-        <h3 className="font-bold text-slate-900 text-lg">No Client Selected</h3>
-        <p className="text-sm text-slate-500 max-w-md mx-auto mt-1">
-          Please select an active client from the header dropdown above to view their scoped documents vault.
-        </p>
+      <div className="p-10 text-center bg-white border border-slate-200 rounded-2xl shadow-xs">
+        <div className="max-w-md mx-auto flex flex-col items-center">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mb-3">
+            <Building2 className="w-6 h-6 text-indigo-600" />
+          </div>
+          <h3 className="font-bold text-slate-900 text-lg">No Active Client Selected</h3>
+          <p className="text-sm text-slate-500 mt-1 mb-6">
+            Please select an active client from the registered entities below or top workspace selector to view compliance documents.
+          </p>
+          {clients && clients.length > 0 ? (
+            <div className="w-full space-y-2">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-left">
+                Select Client Entity:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-left">
+                {clients.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => setSelectedClientId(c.id)}
+                    className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/40 text-left transition-all group cursor-pointer"
+                  >
+                    <div>
+                      <p className="font-semibold text-xs text-slate-900 group-hover:text-indigo-700">
+                        {c.name}
+                      </p>
+                      <p className="text-[11px] font-mono text-slate-400">{c.gstin}</p>
+                    </div>
+                    <ArrowRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-indigo-600 transition-colors" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <Link href="/dashboard/clients">
+              <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold gap-1.5">
+                <Building2 className="w-3.5 h-3.5" />
+                <span>Go to Client Organizations</span>
+              </Button>
+            </Link>
+          )}
+        </div>
       </div>
     );
   }
@@ -361,7 +401,10 @@ export function ScopedDocumentsView() {
             <table className="w-full text-left">
               <thead className="bg-slate-50 text-[11px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">
                 <tr>
-                  <th className="px-5 py-3">Document & Period</th>
+                  <th className="px-5 py-3">Document Name</th>
+                  <th className="px-5 py-3">Client Entity</th>
+                  <th className="px-5 py-3">Type</th>
+                  <th className="px-5 py-3">Tax Period</th>
                   <th className="px-5 py-3">Storage Path (Scoped)</th>
                   <th className="px-5 py-3">Status</th>
                   <th className="px-5 py-3 text-right">Actions</th>
@@ -370,6 +413,7 @@ export function ScopedDocumentsView() {
               <tbody className="text-xs divide-y divide-slate-100">
                 {filteredDocs.map((doc) => {
                   const isExtracting = extractingDocId === doc.id;
+                  const displayName = doc.client_name || doc.client_trade_name || selectedClient.name;
                   return (
                     <tr key={doc.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="px-5 py-3.5">
@@ -381,15 +425,34 @@ export function ScopedDocumentsView() {
                             <div className="font-semibold text-slate-900">
                               {doc.file_name || doc.storage_path.split('/').pop()}
                             </div>
-                            <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5">
-                              <span className="font-medium text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded">
-                                {doc.doc_type}
-                              </span>
-                              <span>&bull;</span>
-                              <span>Period: {doc.period_month}/{doc.period_year}</span>
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              {((doc.file_size || 0) / 1024).toFixed(1)} KB
                             </div>
                           </div>
                         </div>
+                      </td>
+
+                      <td className="px-5 py-3.5">
+                        <div className="font-semibold text-slate-900">
+                          {displayName}
+                        </div>
+                        {doc.client_trade_name && doc.client_trade_name !== displayName && (
+                          <div className="text-[10px] text-slate-400 font-medium">
+                            {doc.client_trade_name}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="px-5 py-3.5 whitespace-nowrap">
+                        <span className="font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded text-[11px] border border-indigo-100">
+                          {doc.doc_type}
+                        </span>
+                      </td>
+
+                      <td className="px-5 py-3.5 whitespace-nowrap">
+                        <span className="font-mono text-[11px] text-slate-600">
+                          Month {String(doc.period_month).padStart(2, '0')}/{doc.period_year}
+                        </span>
                       </td>
 
                       <td className="px-5 py-3.5 font-mono text-[11px] text-slate-500 max-w-xs truncate">

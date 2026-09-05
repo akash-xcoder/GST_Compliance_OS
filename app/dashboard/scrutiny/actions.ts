@@ -33,11 +33,8 @@ export async function getDepartmentNoticesAction(clientId: string): Promise<{
       .order('due_date', { ascending: true });
 
     if (error || !data || data.length === 0) {
-      // Return cached or fallback seed notices
-      if (!runtimeNoticesCache[clientId] || runtimeNoticesCache[clientId].length === 0) {
-        runtimeNoticesCache[clientId] = getFallbackDepartmentNotices(clientId);
-      }
-      return { success: true, data: runtimeNoticesCache[clientId] };
+      // Return session-created notices or real empty array
+      return { success: true, data: runtimeNoticesCache[clientId] || [] };
     }
 
     // Merge with any session-cached new notices

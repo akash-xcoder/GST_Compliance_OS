@@ -25,7 +25,6 @@ export interface FirmProfile {
 }
 
 export interface ClientContextType {
-  // Primary user-specified contract
   currentClient: Client | null;
   setCurrentClient: (client: Client | null) => void;
   clients: Client[];
@@ -43,6 +42,7 @@ export interface ClientContextType {
   // Multi-Firm support
   selectedFirmId: string;
   firmName: string;
+  setFirmName: (name: string) => void;
   firms: FirmProfile[];
   setSelectedFirmId: (firmId: string) => void;
   refreshFirms: () => Promise<void>;
@@ -50,59 +50,6 @@ export interface ClientContextType {
   // Helper getters
   getClientById: (id: string) => Client | undefined;
 }
-
-// Initial mock clients as specified, with production-ready default records
-export const DEFAULT_CLIENTS: Client[] = [
-  {
-    id: 'c1',
-    firm_id: 'a763af2b-c7ea-4a56-b448-513df5ca0dfa',
-    name: 'Acme Corp Industries',
-    gstin: '29AAAAA0000A1Z5',
-    pan: 'AAAAA0000A',
-    trade_name: 'Acme Corp Heavy Industries',
-    status: 'active',
-  },
-  {
-    id: 'c2',
-    firm_id: 'a763af2b-c7ea-4a56-b448-513df5ca0dfa',
-    name: 'Beta Tech Solutions',
-    gstin: '29BBBBB1111B1Z6',
-    pan: 'BBBBB1111B',
-    trade_name: 'Beta Cloud Technologies',
-    status: 'active',
-  },
-  {
-    id: '7ed6ea05-df68-49a4-bfa4-aeaba84d29ca',
-    firm_id: 'a763af2b-c7ea-4a56-b448-513df5ca0dfa',
-    name: 'Acme Manufacturing Ltd.',
-    gstin: '27AAAAA0000A1Z5',
-    pan: 'AAAAA0000A',
-    trade_name: 'Acme Heavy Industries',
-    status: 'active',
-  },
-  {
-    id: '00000000-0000-0000-0000-000000000003',
-    firm_id: 'a763af2b-c7ea-4a56-b448-513df5ca0dfa',
-    name: 'Horizon Logistics LLP',
-    gstin: '19BBBBB1111B2Z6',
-    pan: 'BBBBB1111B',
-    trade_name: 'Horizon Freight & Supply',
-    status: 'active',
-  },
-];
-
-export const DEFAULT_FIRMS: FirmProfile[] = [
-  {
-    id: 'a763af2b-c7ea-4a56-b448-513df5ca0dfa',
-    name: 'Kapur & Associates, CAs',
-    role: 'Managing Partner',
-  },
-  {
-    id: 'f1000000-0000-0000-0000-000000000002',
-    name: 'Kapur Tax Advisory & Corp Services',
-    role: 'Senior Partner',
-  },
-];
 
 const STORAGE_KEY_CLIENT = 'gst_compliance_active_client_id';
 const STORAGE_KEY_FIRM = 'gst_compliance_active_firm_id';
@@ -119,9 +66,10 @@ const ClientContext = createContext<ClientContextType>({
   setSelectedClientId: () => {},
   setSelectedClient: () => {},
   refreshClients: async () => {},
-  selectedFirmId: 'a763af2b-c7ea-4a56-b448-513df5ca0dfa',
-  firmName: 'Kapur & Associates, CAs',
-  firms: DEFAULT_FIRMS,
+  selectedFirmId: '',
+  firmName: '',
+  setFirmName: () => {},
+  firms: [],
   setSelectedFirmId: () => {},
   refreshFirms: async () => {},
   getClientById: () => undefined,
@@ -137,17 +85,17 @@ export interface ClientProviderProps {
 
 export const ClientProvider = ({
   children,
-  initialFirmId = 'a763af2b-c7ea-4a56-b448-513df5ca0dfa',
-  initialFirmName = 'Kapur & Associates, CAs',
+  initialFirmId = '',
+  initialFirmName = '',
   initialClients,
   initialClientId,
 }: ClientProviderProps) => {
   const [selectedFirmId, setSelectedFirmIdState] = useState<string>(initialFirmId);
   const [firmName, setFirmName] = useState<string>(initialFirmName);
-  const [firms, setFirms] = useState<FirmProfile[]>(DEFAULT_FIRMS);
-  const [clients, setClients] = useState<Client[]>(initialClients || DEFAULT_CLIENTS);
+  const [firms, setFirms] = useState<FirmProfile[]>([]);
+  const [clients, setClients] = useState<Client[]>(initialClients || []);
   const [currentClient, setCurrentClientState] = useState<Client | null>(
-    (initialClients && initialClients[0]) || DEFAULT_CLIENTS[0]
+    (initialClients && initialClients[0]) || null
   );
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -177,7 +125,7 @@ export const ClientProvider = ({
         if (found) {
           setCurrentClient(found);
         } else {
-          setCurrentClient({ id, name: `Client (${id.substring(0, 8)})`, gstin: '27AAAAA0000A1Z5' });
+          setCurrentClient(null);
         }
       }
     },
@@ -205,32 +153,44 @@ export const ClientProvider = ({
     [firms]
   );
 
-  // Fetch or refresh clients from Supabase, falling back to mock clients
+  // Fetch live clients from Supabase based on firm membership and user ID
   const refreshClients = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const supabase = createClient();
+
+      // Query all clients accessible to this authenticated session via Supabase RLS
       const { data, error: fetchError } = await supabase
         .from('clients')
-        .select('id, firm_id, name, gstin, pan, created_at')
-        .eq('firm_id', selectedFirmId)
+        .select('id, firm_id, name, gstin, pan, created_at, trade_name')
         .order('created_at', { ascending: false });
 
-      if (fetchError || !data || data.length === 0) {
-        // Fallback to default mock clients
-        setClients(DEFAULT_CLIENTS);
-        setCurrentClientState((prev) => {
-          if (prev && DEFAULT_CLIENTS.some((c) => c.id === prev.id)) return prev;
-          return DEFAULT_CLIENTS[0];
-        });
+      if (fetchError) {
+        console.warn('Notice querying Supabase clients:', fetchError.message);
+        setClients([]);
+        setCurrentClientState(null);
+      } else if (!data || data.length === 0) {
+        // True zero state: strictly show empty state if 0 records, never fallback to mock data
+        setClients([]);
+        setCurrentClientState(null);
       } else {
-        const mappedClients: Client[] = data.map((c) => ({
+        // If selectedFirmId matches records in this tenant, scope to that firm, otherwise show all user records
+        let activeClients = data;
+        if (selectedFirmId) {
+          const matched = data.filter((c: any) => c.firm_id === selectedFirmId);
+          if (matched.length > 0) {
+            activeClients = matched;
+          }
+        }
+
+        const mappedClients: Client[] = activeClients.map((c: any) => ({
           id: c.id,
           firm_id: c.firm_id || selectedFirmId,
           name: c.name,
           gstin: c.gstin,
           pan: c.pan || (c.gstin ? c.gstin.substring(2, 12) : ''),
+          trade_name: c.trade_name,
           created_at: c.created_at,
           status: 'active',
         }));
@@ -243,35 +203,46 @@ export const ClientProvider = ({
         });
       }
     } catch (err: any) {
-      console.warn('Client refresh notice:', err?.message);
-      setClients(DEFAULT_CLIENTS);
+      console.warn('Client refresh error:', err?.message);
+      setClients([]);
+      setCurrentClientState(null);
+      setError(err?.message || 'Failed to fetch clients');
     } finally {
       setLoading(false);
     }
   }, [selectedFirmId]);
 
-  // Refresh firms from Supabase
+  // Refresh firms from Supabase firm_users join
   const refreshFirms = useCallback(async () => {
     try {
       const supabase = createClient();
-      const { data: userResp } = await supabase.auth.getUser();
-      if (!userResp?.user) return;
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) return;
 
       const { data: userFirms, error: firmError } = await supabase
         .from('firm_users')
         .select('firm_id, role, firms(id, name)')
-        .eq('user_id', userResp.user.id);
+        .eq('user_id', user.id);
 
       if (!firmError && userFirms && userFirms.length > 0) {
         const loadedFirms: FirmProfile[] = userFirms.map((item: any) => ({
           id: item.firm_id,
-          name: item.firms?.name || 'CA Practice',
+          name: item.firms?.name || 'CA Practice Workspace',
           role: item.role || 'Member',
         }));
         setFirms(loadedFirms);
-        const currentActive = loadedFirms.find((f) => f.id === selectedFirmId);
-        if (currentActive) {
-          setFirmName(currentActive.name);
+
+        if (!selectedFirmId || !loadedFirms.some((f) => f.id === selectedFirmId)) {
+          setSelectedFirmIdState(loadedFirms[0].id);
+          setFirmName(loadedFirms[0].name);
+        } else {
+          const currentActive = loadedFirms.find((f) => f.id === selectedFirmId);
+          if (currentActive) {
+            setFirmName(currentActive.name);
+          }
         }
       }
     } catch (err: any) {
@@ -285,15 +256,18 @@ export const ClientProvider = ({
     if (typeof window !== 'undefined') {
       try {
         const savedFirmId = localStorage.getItem(STORAGE_KEY_FIRM);
-        if (savedFirmId) setSelectedFirmIdState(savedFirmId);
+        if (savedFirmId && !initialFirmId) {
+          setSelectedFirmIdState(savedFirmId);
+        }
 
-        savedClientId = localStorage.getItem(STORAGE_KEY_CLIENT);
+        savedClientId = localStorage.getItem(STORAGE_KEY_CLIENT) || initialClientId || null;
       } catch (e) {
         console.warn('Error reading from localStorage:', e);
       }
     }
 
     async function initialize() {
+      await refreshFirms();
       await refreshClients();
       if (savedClientId) {
         setSelectedClientId(savedClientId);
@@ -302,8 +276,7 @@ export const ClientProvider = ({
     }
 
     initialize();
-    refreshFirms();
-  }, [refreshClients, refreshFirms, setSelectedClientId]);
+  }, [refreshClients, refreshFirms, setSelectedClientId, initialFirmId, initialClientId]);
 
   const getClientById = useCallback(
     (id: string) => clients.find((c) => c.id === id),
@@ -325,6 +298,7 @@ export const ClientProvider = ({
       refreshClients,
       selectedFirmId,
       firmName,
+      setFirmName,
       firms,
       setSelectedFirmId,
       refreshFirms,
@@ -341,6 +315,7 @@ export const ClientProvider = ({
       refreshClients,
       selectedFirmId,
       firmName,
+      setFirmName,
       firms,
       setSelectedFirmId,
       refreshFirms,

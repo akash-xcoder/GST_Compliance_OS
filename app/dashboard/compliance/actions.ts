@@ -38,6 +38,9 @@ export async function getFirmComplianceRecordsAction(
       .order('due_date', { ascending: true });
 
     if (error || !data || data.length === 0) {
+      if (!clients || clients.length === 0) {
+        return { success: true, data: [] };
+      }
       if (!runtimeFilingsCache[firmKey] || runtimeFilingsCache[firmKey].length === 0) {
         runtimeFilingsCache[firmKey] = getFallbackStatutoryFilings(clients);
       }

@@ -57,9 +57,9 @@ export function VendorCommunicationDashboard({
   onNavigateToRecon,
 }: VendorCommunicationDashboardProps) {
   const { currentClient, selectedClientId, firmName } = useClient();
-  const activeClientId = currentClient?.id || selectedClientId || '7ed6ea05-df68-49a4-bfa4-aeaba84d29ca';
-  const clientName = currentClient?.name || 'Acme Manufacturing Ltd.';
-  const clientGstin = currentClient?.gstin || '27AAAAA0000A1Z5';
+  const activeClientId = currentClient?.id || selectedClientId || '';
+  const clientName = currentClient?.name || 'Taxpayer Entity';
+  const clientGstin = currentClient?.gstin || '';
 
   const [activeTab, setActiveTab] = useState<'discrepancies' | 'history' | 'statutory'>('discrepancies');
   const [discrepancies, setDiscrepancies] = useState<VendorDiscrepancySummary[]>([]);

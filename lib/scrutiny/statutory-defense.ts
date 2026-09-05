@@ -673,7 +673,7 @@ export function getFallbackDepartmentNotices(clientId: string): DepartmentNotice
         'Tax payable declared in Form GSTR-1 exceeds the output tax discharged in Form GSTR-3B for the month of August 2022, creating a tax shortfall under Section 73(1).',
       discrepancy_items: [
         {
-          supplier_name: 'Acme Manufacturing Ltd (Internal Outward)',
+          supplier_name: 'Taxpayer Entity (Internal Outward)',
           supplier_gstin: '27AAAAA0000A1Z5',
           invoice_number: 'INV/22-23/0411',
           invoice_date: '2022-08-14',

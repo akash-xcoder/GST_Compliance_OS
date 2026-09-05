@@ -41,11 +41,7 @@ import {
 
 export default function ScrutinyDashboardPage() {
   const { currentClient, selectedClient, firmName } = useClient();
-  const activeClient = currentClient || selectedClient || {
-    id: 'c1',
-    name: 'Acme Corp Industries',
-    gstin: '29AAAAA0000A1Z5',
-  };
+  const activeClient = currentClient || selectedClient || null;
 
   // State
   const [notices, setNotices] = useState<DepartmentNotice[]>([]);
@@ -89,15 +85,20 @@ export default function ScrutinyDashboardPage() {
 
   // Load notices
   const loadNotices = useCallback(async () => {
+    if (!activeClient?.id) {
+      setNotices([]);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     const res = await getDepartmentNoticesAction(activeClient.id);
     if (res.success && res.data) {
       setNotices(res.data);
     } else {
-      setNotices(getFallbackDepartmentNotices(activeClient.id));
+      setNotices([]);
     }
     setIsLoading(false);
-  }, [activeClient.id]);
+  }, [activeClient?.id]);
 
   useEffect(() => {
     loadNotices();
@@ -263,6 +264,19 @@ export default function ScrutinyDashboardPage() {
       return true;
     });
   }, [notices, searchQuery, selectedCategory, selectedType, selectedStatus, urgentOnly]);
+
+  // If no active client selected or registered
+  if (!activeClient) {
+    return (
+      <div className="p-12 text-center bg-white border border-slate-200 rounded-2xl shadow-xs max-w-4xl mx-auto">
+        <Building2 className="w-12 h-12 text-indigo-500 mx-auto mb-3" />
+        <h3 className="font-bold text-slate-900 text-lg">No Client Selected</h3>
+        <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 mb-5">
+          Select an active client from the header or onboard your first client organization to track departmental scrutiny notices (ASMT-10, DRC-01A, DRC-01).
+        </p>
+      </div>
+    );
+  }
 
   // If in active DefenseStudio mode, render it
   if (activeNotice) {
