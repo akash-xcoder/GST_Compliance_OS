@@ -43,6 +43,7 @@ import { Uploader } from '@/components/documents/Uploader';
 import { createClient } from '@/utils/supabase/client';
 import { ClientProvider, useClient } from '@/context/ClientContext';
 import { ClientSwitcher } from '@/components/ClientSwitcher';
+import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton';
 
 export default function App() {
   return (
@@ -454,6 +455,20 @@ function AppInternal() {
                     </p>
                   </div>
 
+                  {/* Google OAuth Button */}
+                  <GoogleSignInButton label="Continue with Google" />
+
+                  <div className="relative my-4">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-slate-200"></div>
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-white px-2.5 text-slate-400 font-semibold tracking-wider">
+                        Or continue with email
+                      </span>
+                    </div>
+                  </div>
+
                   <form onSubmit={(e) => { e.preventDefault(); setCurrentRoute('onboarding'); }} className="space-y-4">
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1.5" htmlFor="email-preview">
@@ -512,6 +527,20 @@ function AppInternal() {
                     <p className="text-sm text-slate-500 mt-1">
                       Set up a multi-tenant account for your audit and tax team
                     </p>
+                  </div>
+
+                  {/* Google OAuth Button */}
+                  <GoogleSignInButton label="Sign up with Google" />
+
+                  <div className="relative my-4">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-slate-200"></div>
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-white px-2.5 text-slate-400 font-semibold tracking-wider">
+                        Or register with email
+                      </span>
+                    </div>
                   </div>
 
                   <form onSubmit={(e) => { e.preventDefault(); setCurrentRoute('onboarding'); }} className="space-y-4">

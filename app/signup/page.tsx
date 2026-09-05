@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { signUp } from '@/app/actions/auth';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
+import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -16,6 +17,16 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlError = params.get('error');
+      if (urlError) {
+        setError(decodeURIComponent(urlError));
+      }
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -107,6 +118,25 @@ export default function SignupPage() {
               <span className="leading-relaxed">{error}</span>
             </div>
           )}
+
+          {/* Continue with Google OAuth Button */}
+          <div className="mb-5">
+            <GoogleSignInButton
+              label="Sign up with Google"
+              onError={(msg) => setError(msg)}
+            />
+          </div>
+
+          <div className="relative my-5">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-200"></div>
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-white px-2.5 text-slate-400 font-semibold tracking-wider">
+                Or register with email
+              </span>
+            </div>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
