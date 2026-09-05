@@ -16,6 +16,9 @@ export default defineConfig(() => {
         'next/navigation': path.resolve(__dirname, 'lib/shims/next-navigation.tsx'),
         'next/link': path.resolve(__dirname, 'lib/shims/next-link.tsx'),
         'next/router': path.resolve(__dirname, 'lib/shims/next-navigation.tsx'),
+        'next/cache': path.resolve(__dirname, 'lib/shims/next-cache.ts'),
+        'next/server': path.resolve(__dirname, 'lib/shims/next-server.ts'),
+        'next/headers': path.resolve(__dirname, 'lib/shims/next-headers.ts'),
       },
     },
     server: {
