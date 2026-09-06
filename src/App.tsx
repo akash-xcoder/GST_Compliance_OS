@@ -2375,14 +2375,14 @@ function AppInternal() {
                                 return;
                               }
 
-                              // 3. Explicitly pass firm_id: user.id in the .insert() payload so it perfectly matches the RLS requirement (firm_id = auth.uid())
+                              // Explicitly pass firm_id: realFirmId so it maps to the actual firms table
                               const { data: createdRow, error: insertError } = await supabase
                                 .from('clients')
                                 .insert({
                                   name: newClientName.trim(),
                                   gstin: newClientGstin,
                                   pan: derivedPan,
-                                  firm_id: user.id,
+                                  firm_id: realFirmId, // <--- Fixed: Uses the actual firm UUID
                                   user_id: user.id,
                                 })
                                 .select('id')

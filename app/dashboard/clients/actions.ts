@@ -67,11 +67,13 @@ export async function createClientAction(
       };
     }
 
-    // 6. Insert client into `clients` table with firm_id: user.id to satisfy RLS (firm_id = auth.uid())
+    const targetFirmId = membership?.firm_id || user.id;
+
+    // 6. Insert client into `clients` table with firm_id mapping to the actual firm
     const { data: client, error: insertError } = await supabase
       .from('clients')
       .insert({
-        firm_id: user.id,
+        firm_id: targetFirmId,
         user_id: user.id,
         name,
         gstin: rawGstin,

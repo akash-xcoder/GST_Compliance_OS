@@ -154,14 +154,29 @@ export function ClientListClient({ initialClients, firmName = 'CA Practice' }: C
           return;
         }
 
-        // 3. Explicitly pass firm_id: user.id in the .insert() payload so it perfectly matches the RLS requirement (firm_id = auth.uid())
+        // 3. Resolve the actual firm UUID from firm_users
+        let targetFirmId: string = user.id;
+        try {
+          const { data: firmUser } = await supabase
+            .from('firm_users')
+            .select('firm_id')
+            .eq('user_id', user.id)
+            .limit(1)
+            .maybeSingle();
+          if (firmUser?.firm_id) {
+            targetFirmId = firmUser.firm_id;
+          }
+        } catch {
+          // fallback
+        }
+
         const { data: newClientRow, error: insertError } = await supabase
           .from('clients')
           .insert({
             name: name.trim(),
             gstin,
             pan: effectivePan,
-            firm_id: user.id,
+            firm_id: targetFirmId,
             user_id: user.id,
           })
           .select('id')
