@@ -74,14 +74,14 @@ const MONTHS = [
   { value: 3, label: 'March' },
 ];
 
-const YEARS = [2024, 2023, 2022];
+const YEARS = [2026, 2025, 2024, 2023, 2022];
 
 export function ReconciliationView({
   clientId,
   clientName,
   clientGstin,
   initialPeriodMonth = 10,
-  initialPeriodYear = 2023,
+  initialPeriodYear = 2026,
   initialData,
 }: ReconciliationViewProps) {
   const [selectedMonth, setSelectedMonth] = useState<number>(initialPeriodMonth);

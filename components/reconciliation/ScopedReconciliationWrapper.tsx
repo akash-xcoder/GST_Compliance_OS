@@ -63,7 +63,7 @@ export function ScopedReconciliationWrapper() {
         clientName={selectedClient.name}
         clientGstin={selectedClient.gstin}
         initialPeriodMonth={10}
-        initialPeriodYear={2023}
+        initialPeriodYear={2026}
       />
     </div>
   );

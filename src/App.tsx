@@ -2080,7 +2080,7 @@ function AppInternal() {
                               clientName={selectedClient.name}
                               clientGstin={selectedClient.gstin}
                               initialPeriodMonth={10}
-                              initialPeriodYear={2023}
+                              initialPeriodYear={2026}
                             />
                           )}
                         </div>
@@ -2889,7 +2889,7 @@ function AppInternal() {
                       clientName={currentClient?.name || clients.find((c) => c.id === selectedClientId)?.name || clients[0]?.name || ''}
                       clientGstin={currentClient?.gstin || clients.find((c) => c.id === selectedClientId)?.gstin || clients[0]?.gstin || ''}
                       initialPeriodMonth={10}
-                      initialPeriodYear={2023}
+                      initialPeriodYear={2026}
                     />
                   )}
                 </div>
