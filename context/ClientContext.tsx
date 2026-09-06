@@ -220,9 +220,10 @@ export const ClientProvider = ({
       const supabase = createClient();
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser();
 
-      if (!user) return;
+      if (userError || !user) return;
 
       const { data: userFirms, error: firmError } = await supabase
         .from('firm_users')
@@ -252,8 +253,9 @@ export const ClientProvider = ({
     }
   }, [selectedFirmId]);
 
-  // Initial client-side hydration from localStorage & fetching
+  // Initial client-side hydration from localStorage & fetching - runs strictly once on mount
   useEffect(() => {
+    let isMounted = true;
     let savedClientId: string | null = null;
     if (typeof window !== 'undefined') {
       try {
@@ -271,14 +273,20 @@ export const ClientProvider = ({
     async function initialize() {
       await refreshFirms();
       await refreshClients();
-      if (savedClientId) {
-        setSelectedClientId(savedClientId);
+      if (isMounted) {
+        if (savedClientId) {
+          setSelectedClientId(savedClientId);
+        }
+        setLoading(false);
       }
-      setLoading(false);
     }
 
     initialize();
-  }, [refreshClients, refreshFirms, setSelectedClientId, initialFirmId, initialClientId]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Strictly empty dependency array to prevent infinite rendering loops
 
   const getClientById = useCallback(
     (id: string) => clients.find((c) => c.id === id),

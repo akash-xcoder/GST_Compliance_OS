@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useTransition } from 'react';
+import React, { useState, useEffect, useTransition } from 'react';
 import Link from 'next/link';
 import {
   Users,
@@ -38,9 +38,43 @@ interface ClientListClientProps {
 
 export function ClientListClient({ initialClients, firmName = 'CA Practice' }: ClientListClientProps) {
   const [clients, setClients] = useState<ClientItem[]>(initialClients);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  // Safely fetch authenticated user once on mount without causing infinite re-render loops
+  useEffect(() => {
+    let isMounted = true;
+
+    async function checkAuthUser() {
+      try {
+        const supabase = createClient();
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
+
+        if (authError) {
+          // Gracefully ignore 403 Forbidden / unauthenticated sessions without retrying endlessly
+          return;
+        }
+
+        if (isMounted && user) {
+          // Guard state update: only update if user ID actually changed to prevent re-render cascades
+          setCurrentUser((prev: any) => (prev?.id === user.id ? prev : user));
+        }
+      } catch (err) {
+        // Silently catch unexpected auth or network errors
+      }
+    }
+
+    checkAuthUser();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Strictly empty dependency array so it only runs once on mount
 
   // Form states for Add Client Modal
   const [name, setName] = useState('');
@@ -99,11 +133,14 @@ export function ClientListClient({ initialClients, firmName = 'CA Practice' }: C
         // Call createClient() directly inside the form submission handler to ensure fresh cookies
         const supabase = createClient();
 
-        // 1. Await supabase.auth.getUser() to get the securely verified current user
-        let {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
+        // 1. Check verified currentUser state or await supabase.auth.getUser()
+        let user = currentUser;
+        if (!user) {
+          const {
+            data: { user: fetchedUser },
+          } = await supabase.auth.getUser();
+          user = fetchedUser || null;
+        }
 
         // Fallback: If getUser() returns null in browser, check getSession() so session cookies are seamlessly read
         if (!user) {

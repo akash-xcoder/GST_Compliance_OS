@@ -34,6 +34,7 @@ import {
   HardDrive,
   Layers,
   Loader2,
+  FileCheck,
   Sparkles,
   Eye,
   EyeOff,
@@ -227,15 +228,30 @@ function AppInternal() {
 
   // Load real firm_id, clients, documents, and invoice stats from Supabase with relational join
   React.useEffect(() => {
+    let isMounted = true;
+
     async function loadSupabaseData() {
       try {
         const supabase = createClient();
 
-        // Check active session / user
+        // Check active session / user safely using getSession() first to avoid 403 storms
         const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        setCurrentUser(user || null);
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (sessionError || !session?.user) {
+          if (isMounted) {
+            setCurrentUser(null);
+            setRealFirmId('');
+          }
+          return;
+        }
+
+        const user = session.user;
+        if (isMounted && user) {
+          setCurrentUser((prev: any) => (prev?.id === user.id ? prev : user));
+        }
 
         let targetFirmId = selectedFirmId;
 
@@ -253,54 +269,52 @@ function AppInternal() {
           const { data: anyFirm } = await supabase.from('firms').select('id, name').limit(1).maybeSingle();
           if (anyFirm?.id) {
             targetFirmId = anyFirm.id;
-            if (anyFirm.name) {
+            if (anyFirm.name && isMounted) {
               setFirmName(anyFirm.name);
-              setContextFirmName(anyFirm.name);
             }
           }
         }
 
-        if (targetFirmId) {
+        if (targetFirmId && isMounted) {
           setRealFirmId(targetFirmId);
 
           const { data: firmInfo } = await supabase.from('firms').select('name').eq('id', targetFirmId).maybeSingle();
-          if (firmInfo?.name) {
+          if (firmInfo?.name && isMounted) {
             setFirmName(firmInfo.name);
-            setContextFirmName(firmInfo.name);
           }
         }
 
-        await refreshClients();
-
-        // Fetch documents
+        // Fetch documents safely scoped to current user session
         const { data: dbDocs } = await supabase
           .from('documents')
           .select('*, clients(name, trade_name)')
           .order('created_at', { ascending: false });
 
-        if (dbDocs && dbDocs.length > 0) {
-          setDocuments(
-            dbDocs.map((d: any) => {
-              const clientJoin = Array.isArray(d.clients) ? d.clients[0] : d.clients;
-              return {
-                id: d.id,
-                client_id: d.client_id,
-                client_name: clientJoin?.name || clientJoin?.trade_name || '',
-                client_trade_name: clientJoin?.trade_name || '',
-                firm_id: d.firm_id,
-                storage_path: d.storage_path || '',
-                doc_type: d.doc_type || 'Purchase Register',
-                period_month: d.period_month || 10,
-                period_year: d.period_year || 2023,
-                file_name: d.file_name || (d.storage_path ? d.storage_path.split('/').pop() : 'document'),
-                file_size: d.file_size || 0,
-                status: d.status || 'uploaded',
-                created_at: d.created_at || new Date().toISOString(),
-              };
-            })
-          );
-        } else {
-          setDocuments([]);
+        if (isMounted) {
+          if (dbDocs && dbDocs.length > 0) {
+            setDocuments(
+              dbDocs.map((d: any) => {
+                const clientJoin = Array.isArray(d.clients) ? d.clients[0] : d.clients;
+                return {
+                  id: d.id,
+                  client_id: d.client_id,
+                  client_name: clientJoin?.name || clientJoin?.trade_name || '',
+                  client_trade_name: clientJoin?.trade_name || '',
+                  firm_id: d.firm_id,
+                  storage_path: d.storage_path || '',
+                  doc_type: d.doc_type || 'Purchase Register',
+                  period_month: d.period_month || 10,
+                  period_year: d.period_year || 2023,
+                  file_name: d.file_name || (d.storage_path ? d.storage_path.split('/').pop() : 'document'),
+                  file_size: d.file_size || 0,
+                  status: d.status || 'uploaded',
+                  created_at: d.created_at || new Date().toISOString(),
+                };
+              })
+            );
+          } else {
+            setDocuments([]);
+          }
         }
 
         // Fetch live invoice exception counts
@@ -308,20 +322,29 @@ function AppInternal() {
           .from('invoices')
           .select('*', { count: 'exact', head: true })
           .in('match_status', ['MISMATCH', 'MISSING_IN_BOOKS', 'MISSING_IN_2B']);
-        setExceptionsCount(eCount || 0);
+        if (isMounted) {
+          setExceptionsCount(eCount || 0);
+        }
 
         // Fetch live reconciled/matched counts
         const { count: mCount } = await supabase
           .from('invoices')
           .select('*', { count: 'exact', head: true })
           .eq('match_status', 'MATCHED');
-        setReconciledCount(mCount || 0);
+        if (isMounted) {
+          setReconciledCount(mCount || 0);
+        }
       } catch (err) {
         console.warn('Supabase initial fetch in App.tsx:', err);
       }
     }
+
     loadSupabaseData();
-  }, [refreshClients, setContextFirmName]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Real client overview metrics for selected active client (defaults to 0 for a new client)
   const activeClientId = activeClient?.id || selectedClientId || '';
@@ -446,6 +469,111 @@ function AppInternal() {
     }
 
     fetchClientMetrics();
+    return () => {
+      isMounted = false;
+    };
+  }, [activeClientId]);
+
+  // Real statutory compliance records pulled from Supabase using @supabase/ssr
+  const [clientComplianceRecords, setClientComplianceRecords] = useState<Array<{
+    id: string;
+    type: string;
+    title: string;
+    period: string;
+    status: string;
+    dateOfFiling?: string | null;
+    dueDate?: string | null;
+    arn?: string | null;
+  }>>([]);
+  const [isLoadingCompliance, setIsLoadingCompliance] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!activeClientId) {
+      setClientComplianceRecords([]);
+      setIsLoadingCompliance(false);
+      return;
+    }
+
+    let isMounted = true;
+    async function fetchCompliance() {
+      setIsLoadingCompliance(true);
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from('statutory_filings')
+          .select('*')
+          .eq('client_id', activeClientId)
+          .order('due_date', { ascending: false });
+
+        if (error) {
+          console.warn('Notice querying statutory_filings in App.tsx:', error.message);
+          if (isMounted) {
+            setClientComplianceRecords([]);
+            setIsLoadingCompliance(false);
+          }
+          return;
+        }
+
+        if (!data || data.length === 0) {
+          if (isMounted) {
+            setClientComplianceRecords([]);
+          }
+        } else {
+          const formatted = data.map((row: any) => {
+            const rawType = (row.return_type || row.type || 'GSTR').toString().toUpperCase();
+            let badgeLabel = 'GST';
+            let title = `${rawType.replace('_', '-')} Return`;
+
+            if (rawType.includes('3B')) {
+              badgeLabel = '3B';
+              title = 'GSTR-3B Monthly Return';
+            } else if (rawType.includes('1') || rawType === 'GSTR_1' || rawType === 'R1') {
+              badgeLabel = 'R1';
+              title = 'GSTR-1 Outward Supplies';
+            } else if (rawType.includes('2B') || rawType === 'GSTR_2B') {
+              badgeLabel = '2B';
+              title = 'GSTR-2B Auto-Drafted ITC';
+            } else if (rawType.includes('9C')) {
+              badgeLabel = '9C';
+              title = 'GSTR-9C Reconciliation Statement';
+            } else if (rawType.includes('9')) {
+              badgeLabel = '9';
+              title = 'GSTR-9 Annual Return';
+            } else if (rawType.includes('CMP') || rawType === 'CMP_08') {
+              badgeLabel = 'CMP';
+              title = 'CMP-08 Quarterly Statement';
+            }
+
+            const rawStatus = (row.filing_status || row.status || 'Not Started').toString();
+
+            return {
+              id: row.id,
+              type: badgeLabel,
+              title: row.title || title,
+              period: row.filing_period || row.period || 'Current Period',
+              status: rawStatus,
+              dateOfFiling: row.date_of_filing || row.filed_at || null,
+              dueDate: row.due_date || null,
+              arn: row.arn_number || row.arn || null,
+            };
+          });
+          if (isMounted) {
+            setClientComplianceRecords(formatted);
+          }
+        }
+      } catch (err: any) {
+        console.warn('Failed to fetch compliance in App.tsx:', err?.message);
+        if (isMounted) {
+          setClientComplianceRecords([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingCompliance(false);
+        }
+      }
+    }
+
+    fetchCompliance();
     return () => {
       isMounted = false;
     };
@@ -1542,52 +1670,88 @@ function AppInternal() {
                                     </span>
                                   </div>
 
-                                  <div className="space-y-3">
-                                    <div className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/60 flex items-center justify-between">
-                                      <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
-                                          3B
-                                        </div>
-                                        <div>
-                                          <div className="font-bold text-slate-900 text-sm">GSTR-3B Monthly Return</div>
-                                          <div className="text-xs text-slate-500">Period: September 2023 &bull; Filed on Oct 19, 2023</div>
-                                        </div>
-                                      </div>
-                                      <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-[11px] font-bold rounded-md uppercase tracking-wider">
-                                        Filed
-                                      </span>
+                                  {isLoadingCompliance ? (
+                                    <div className="py-8 flex flex-col items-center justify-center text-center">
+                                      <Loader2 className="w-5 h-5 text-indigo-600 animate-spin mb-2" />
+                                      <p className="text-xs text-slate-500">Loading compliance records...</p>
                                     </div>
+                                  ) : clientComplianceRecords.length === 0 ? (
+                                    <div className="p-8 text-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 flex flex-col items-center justify-center">
+                                      <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mb-2.5">
+                                        <FileCheck className="w-5 h-5 text-slate-400" />
+                                      </div>
+                                      <p className="text-sm font-semibold text-slate-700">No compliance records found</p>
+                                      <p className="text-xs text-slate-500 mt-1 max-w-sm">
+                                        Statutory filing records and return statuses will appear here once tracked or filed for this client.
+                                      </p>
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-3">
+                                      {clientComplianceRecords.map((item) => {
+                                        const normStatus = (item.status || '').toUpperCase();
+                                        const isFiled = normStatus === 'FILED';
+                                        const isOverdue = normStatus === 'OVERDUE';
+                                        const isReady =
+                                          normStatus.includes('READY') ||
+                                          normStatus.includes('PREP') ||
+                                          normStatus.includes('APPROVAL');
 
-                                    <div className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/60 flex items-center justify-between">
-                                      <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
-                                          R1
-                                        </div>
-                                        <div>
-                                          <div className="font-bold text-slate-900 text-sm">GSTR-1 Outward Supplies</div>
-                                          <div className="text-xs text-slate-500">Period: September 2023 &bull; Filed on Oct 10, 2023</div>
-                                        </div>
-                                      </div>
-                                      <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-[11px] font-bold rounded-md uppercase tracking-wider">
-                                        Filed
-                                      </span>
+                                        return (
+                                          <div
+                                            key={item.id}
+                                            className={`p-3.5 rounded-xl border flex items-center justify-between transition-colors ${
+                                              isReady
+                                                ? 'border-amber-200/80 bg-amber-50/40'
+                                                : isOverdue
+                                                ? 'border-rose-200/80 bg-rose-50/40'
+                                                : 'border-slate-100 bg-slate-50/60'
+                                            }`}
+                                          >
+                                            <div className="flex items-center gap-3">
+                                              <div
+                                                className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs ${
+                                                  isFiled
+                                                    ? 'bg-emerald-100 text-emerald-700'
+                                                    : isOverdue
+                                                    ? 'bg-rose-100 text-rose-700'
+                                                    : isReady
+                                                    ? 'bg-amber-100 text-amber-700'
+                                                    : 'bg-slate-200 text-slate-700'
+                                                }`}
+                                              >
+                                                {item.type}
+                                              </div>
+                                              <div>
+                                                <div className="font-bold text-slate-900 text-sm">{item.title}</div>
+                                                <div className="text-xs text-slate-500">
+                                                  Period: {item.period}
+                                                  {item.dateOfFiling
+                                                    ? ` • Filed on ${item.dateOfFiling}`
+                                                    : item.dueDate
+                                                    ? ` • Due by ${item.dueDate}`
+                                                    : ''}
+                                                  {item.arn ? ` • ARN: ${item.arn}` : ''}
+                                                </div>
+                                              </div>
+                                            </div>
+                                            <span
+                                              className={`px-2.5 py-1 text-[11px] font-bold rounded-md uppercase tracking-wider ${
+                                                isFiled
+                                                  ? 'bg-emerald-100 text-emerald-800'
+                                                  : isOverdue
+                                                  ? 'bg-rose-100 text-rose-800'
+                                                  : isReady
+                                                  ? 'bg-amber-100 text-amber-800'
+                                                  : 'bg-slate-100 text-slate-800'
+                                              }`}
+                                            >
+                                              {item.status}
+                                            </span>
+                                          </div>
+                                        );
+                                      })}
                                     </div>
-
-                                    <div className="p-3.5 rounded-xl border border-amber-200/80 bg-amber-50/40 flex items-center justify-between">
-                                      <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-xs">
-                                          2B
-                                        </div>
-                                        <div>
-                                          <div className="font-bold text-slate-900 text-sm">GSTR-2B Auto-Drafted ITC</div>
-                                          <div className="text-xs text-slate-500">Period: October 2023 &bull; Generated on Nov 14, 2023</div>
-                                        </div>
-                                      </div>
-                                      <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-[11px] font-bold rounded-md uppercase tracking-wider">
-                                        Ready to Reconcile
-                                      </span>
-                                    </div>
-                                  </div>
+                                  )}
                                 </div>
 
                                 <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col justify-between">
