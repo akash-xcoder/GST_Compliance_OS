@@ -119,6 +119,19 @@ export async function saveDocumentMetadata(
         .single();
     }
 
+    // Fallback if columns are named `month` and `year` instead of `period_month` and `period_year`
+    if (insertResult.error && (insertResult.error.message.includes('period_month') || insertResult.error.message.includes('period_year') || insertResult.error.code === '42703')) {
+      delete payload.period_month;
+      delete payload.period_year;
+      payload.month = Number(periodMonth);
+      payload.year = Number(periodYear);
+      insertResult = await supabase
+        .from('documents')
+        .insert(payload)
+        .select()
+        .single();
+    }
+
     if (insertResult.error) {
       console.warn('Database insert into documents table notice (RLS or permissions):', insertResult.error.message);
       const fallbackDoc = {

@@ -221,38 +221,71 @@ CRITICAL INSTRUCTIONS:
 
     // 8. Bulk insert extracted invoices into `invoices` table
     if (extractedInvoices.length > 0) {
-      const invoiceRows = extractedInvoices.map((inv) => ({
-        firm_id: doc.firm_id,
-        client_id: doc.client_id,
-        document_id: doc.id,
-        invoice_number: inv.invoice_number,
-        supplier_gstin: inv.supplier_gstin.toUpperCase().trim(),
-        invoice_date: inv.invoice_date,
-        taxable_value: Number(inv.taxable_value),
-        cgst: Number(inv.cgst || 0),
-        sgst: Number(inv.sgst || 0),
-        igst: Number(inv.igst || 0),
-        total_amount: Number(inv.total_amount),
-        source: source,
-        period_month: Number(doc.period_month),
-        period_year: Number(doc.period_year),
-      }));
+      const pMonth = Number(doc.period_month ?? doc.month ?? 9);
+      const pYear = Number(doc.period_year ?? doc.year ?? 2026);
 
-      // Try bulk insert with document_id
+      const createRows = (usePeriodCols: boolean, withDocId: boolean) =>
+        extractedInvoices.map((inv) => {
+          const row: Record<string, any> = {
+            firm_id: doc.firm_id,
+            client_id: doc.client_id,
+            invoice_number: inv.invoice_number,
+            supplier_gstin: inv.supplier_gstin.toUpperCase().trim(),
+            invoice_date: inv.invoice_date,
+            taxable_value: Number(inv.taxable_value),
+            cgst: Number(inv.cgst || 0),
+            sgst: Number(inv.sgst || 0),
+            igst: Number(inv.igst || 0),
+            total_amount: Number(inv.total_amount),
+            source: source,
+          };
+          if (withDocId && doc.id) {
+            row.document_id = doc.id;
+          }
+          if (usePeriodCols) {
+            row.period_month = pMonth;
+            row.period_year = pYear;
+          } else {
+            row.month = pMonth;
+            row.year = pYear;
+          }
+          return row;
+        });
+
+      // 1. Try insert with period_month/period_year and document_id
+      let invoiceRows = createRows(true, true);
       let insertResult = await supabase.from('invoices').insert(invoiceRows);
 
-      // Fallback if table lacks document_id column
-      if (
-        insertResult.error &&
-        (insertResult.error.message.includes('document_id') || insertResult.error.code === '42703')
-      ) {
-        const withoutDocId = invoiceRows.map(({ document_id, ...rest }) => rest);
-        insertResult = await supabase.from('invoices').insert(withoutDocId);
+      // 2. If column error occurs (e.g. 42703 for period_month or document_id)
+      if (insertResult.error) {
+        const msg = insertResult.error.message?.toLowerCase() || '';
+        const isPeriodColError = msg.includes('period_month') || msg.includes('period_year');
+        const isDocIdError = msg.includes('document_id');
+
+        if (isPeriodColError) {
+          // Retry with month & year columns
+          invoiceRows = createRows(false, !isDocIdError);
+          insertResult = await supabase.from('invoices').insert(invoiceRows);
+
+          // If document_id also failed with month/year
+          if (insertResult.error && (insertResult.error.message?.includes('document_id') || insertResult.error.code === '42703')) {
+            invoiceRows = createRows(false, false);
+            insertResult = await supabase.from('invoices').insert(invoiceRows);
+          }
+        } else if (isDocIdError || insertResult.error.code === '42703') {
+          // Retry without document_id (first with period_month, then fallback to month/year)
+          invoiceRows = createRows(true, false);
+          insertResult = await supabase.from('invoices').insert(invoiceRows);
+
+          if (insertResult.error && (insertResult.error.message?.includes('period_month') || insertResult.error.code === '42703')) {
+            invoiceRows = createRows(false, false);
+            insertResult = await supabase.from('invoices').insert(invoiceRows);
+          }
+        }
       }
 
       if (insertResult.error) {
-         // THIS IS OUR FIX: Crash the process and reveal the error
-         throw new Error(`DATABASE INSERT FAILED: ${insertResult.error.message} (Code: ${insertResult.error.code})`);
+        throw new Error(`DATABASE INSERT FAILED: ${insertResult.error.message} (Code: ${insertResult.error.code})`);
       }
     }
 

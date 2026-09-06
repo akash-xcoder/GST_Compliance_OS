@@ -494,6 +494,142 @@ export function executeDeterministicMatching(invoices: InvoiceItem[]): {
 }
 
 /**
+ * Helper to fetch invoices for a given client and tax period.
+ * Supports both `period_month`/`period_year` and `month`/`year` columns,
+ * handling integer and string representations with full fallback support.
+ */
+async function fetchClientInvoicesForPeriod(
+  supabase: any,
+  clientId: string,
+  periodMonth: number,
+  periodYear: number
+): Promise<{ invoices: InvoiceItem[]; isDbBacked: boolean }> {
+  const monthNames = [
+    '', 'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const monthName = monthNames[periodMonth] || '';
+
+  let rawRows: any[] = [];
+  let isDb = false;
+
+  // 1. Try period_month and period_year filter
+  try {
+    const { data: periodRows, error: periodErr } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('period_month', periodMonth)
+      .eq('period_year', periodYear);
+
+    if (!periodErr && periodRows && periodRows.length > 0) {
+      rawRows = periodRows;
+      isDb = true;
+    }
+  } catch (err) {
+    console.warn('Query with period_month/period_year failed:', err);
+  }
+
+  // 2. Fallback: try month and year (numeric)
+  if (rawRows.length === 0) {
+    try {
+      const { data: myRows, error: myErr } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('client_id', clientId)
+        .eq('month', periodMonth)
+        .eq('year', periodYear);
+
+      if (!myErr && myRows && myRows.length > 0) {
+        rawRows = myRows;
+        isDb = true;
+      }
+    } catch (err) {
+      console.warn('Query with numeric month/year failed:', err);
+    }
+  }
+
+  // 3. Fallback: try month as text name (e.g., 'September') and year
+  if (rawRows.length === 0 && monthName) {
+    try {
+      const { data: nameRows, error: nameErr } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('client_id', clientId)
+        .eq('month', monthName)
+        .eq('year', periodYear);
+
+      if (!nameErr && nameRows && nameRows.length > 0) {
+        rawRows = nameRows;
+        isDb = true;
+      }
+    } catch (err) {
+      console.warn('Query with string month name failed:', err);
+    }
+  }
+
+  // 4. Fallback: fetch client invoices and match flexibly
+  if (rawRows.length === 0) {
+    try {
+      const { data: allRows, error: allErr } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('client_id', clientId);
+
+      if (!allErr && allRows && allRows.length > 0) {
+        isDb = true;
+        rawRows = allRows.filter((row: any) => {
+          const m = row.period_month ?? row.month;
+          const y = row.period_year ?? row.year;
+          if (m !== undefined && m !== null && y !== undefined && y !== null) {
+            const mNum = typeof m === 'number'
+              ? m
+              : monthNames.findIndex((n) => n.toLowerCase() === String(m).toLowerCase().trim());
+            const yNum = typeof y === 'number'
+              ? y
+              : parseInt(String(y).replace(/[^0-9]/g, ''), 10);
+            if (mNum === periodMonth && yNum === periodYear) return true;
+          }
+          if (row.invoice_date) {
+            const d = new Date(row.invoice_date);
+            if (!isNaN(d.getTime())) {
+              return d.getMonth() + 1 === periodMonth && d.getFullYear() === periodYear;
+            }
+          }
+          return false;
+        });
+      }
+    } catch (err) {
+      console.warn('Fallback query on client invoices failed:', err);
+    }
+  }
+
+  const invoices: InvoiceItem[] = rawRows.map((row: any) => ({
+    id: row.id,
+    firm_id: row.firm_id,
+    client_id: row.client_id,
+    document_id: row.document_id,
+    invoice_number: row.invoice_number,
+    supplier_gstin: row.supplier_gstin,
+    supplier_name: row.supplier_name,
+    invoice_date: row.invoice_date,
+    taxable_value: Number(row.taxable_value || 0),
+    cgst: Number(row.cgst || 0),
+    sgst: Number(row.sgst || 0),
+    igst: Number(row.igst || 0),
+    total_amount: Number(row.total_amount || 0),
+    source: row.source,
+    period_month: Number(row.period_month ?? row.month ?? periodMonth),
+    period_year: Number(row.period_year ?? row.year ?? periodYear),
+    recon_status: row.recon_status || row.status,
+    status: row.status,
+    ai_explanation: row.ai_explanation || null,
+  }));
+
+  return { invoices, isDbBacked: isDb };
+}
+
+/**
  * Server Action: Fetches reconciliation data for display.
  */
 export async function getReconciliationData(
@@ -503,42 +639,7 @@ export async function getReconciliationData(
 ): Promise<ReconcileResult> {
   const supabase = await createClient();
 
-  let invoices: InvoiceItem[] = [];
-
-  try {
-    const { data: dbInvoices, error } = await supabase
-      .from('invoices')
-      .select('*')
-      .eq('client_id', clientId)
-      .eq('period_month', periodMonth)
-      .eq('period_year', periodYear);
-
-    if (!error && dbInvoices && dbInvoices.length > 0) {
-      invoices = dbInvoices.map((row: any) => ({
-        id: row.id,
-        firm_id: row.firm_id,
-        client_id: row.client_id,
-        document_id: row.document_id,
-        invoice_number: row.invoice_number,
-        supplier_gstin: row.supplier_gstin,
-        supplier_name: row.supplier_name,
-        invoice_date: row.invoice_date,
-        taxable_value: Number(row.taxable_value || 0),
-        cgst: Number(row.cgst || 0),
-        sgst: Number(row.sgst || 0),
-        igst: Number(row.igst || 0),
-        total_amount: Number(row.total_amount || 0),
-        source: row.source,
-        period_month: Number(row.period_month),
-        period_year: Number(row.period_year),
-        recon_status: row.recon_status || row.status,
-        status: row.status,
-        ai_explanation: row.ai_explanation || null,
-      }));
-    }
-  } catch (err) {
-    console.warn('Could not query database invoices directly:', err);
-  }
+  const { invoices } = await fetchClientInvoicesForPeriod(supabase, clientId, periodMonth, periodYear);
 
   // Return actual empty state if no records in DB
   if (invoices.length === 0) {
@@ -578,45 +679,13 @@ export async function runReconciliation(
     data: { user },
   } = await supabase.auth.getUser();
 
-  // 2. Fetch all invoices for the client and period from the `invoices` table
-  let rawInvoices: InvoiceItem[] = [];
-  let isDbBacked = false;
-
-  try {
-    const { data: dbInvoices, error: queryError } = await supabase
-      .from('invoices')
-      .select('*')
-      .eq('client_id', clientId)
-      .eq('period_month', periodMonth)
-      .eq('period_year', periodYear);
-
-    if (!queryError && dbInvoices && dbInvoices.length > 0) {
-      rawInvoices = dbInvoices.map((row: any) => ({
-        id: row.id,
-        firm_id: row.firm_id,
-        client_id: row.client_id,
-        document_id: row.document_id,
-        invoice_number: row.invoice_number,
-        supplier_gstin: row.supplier_gstin,
-        supplier_name: row.supplier_name,
-        invoice_date: row.invoice_date,
-        taxable_value: Number(row.taxable_value || 0),
-        cgst: Number(row.cgst || 0),
-        sgst: Number(row.sgst || 0),
-        igst: Number(row.igst || 0),
-        total_amount: Number(row.total_amount || 0),
-        source: row.source,
-        period_month: Number(row.period_month),
-        period_year: Number(row.period_year),
-        recon_status: row.recon_status || row.status,
-        status: row.status,
-        ai_explanation: row.ai_explanation || null,
-      }));
-      isDbBacked = true;
-    }
-  } catch (err) {
-    console.warn('Database query error in runReconciliation:', err);
-  }
+  // 2. Fetch all invoices for the client and period from the `invoices` table (supporting period_month/period_year and month/year)
+  const { invoices: rawInvoices, isDbBacked } = await fetchClientInvoicesForPeriod(
+    supabase,
+    clientId,
+    periodMonth,
+    periodYear
+  );
 
   // If no records exist in DB for this period, return empty result
   if (rawInvoices.length === 0) {
