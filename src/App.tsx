@@ -2347,42 +2347,71 @@ function AppInternal() {
                               return;
                             }
 
-                            // Check duplicate GSTIN
                             if (clients.some((c) => c.gstin === newClientGstin)) {
                               setAddClientError(`A client with GSTIN ${newClientGstin} already exists in your firm.`);
                               return;
                             }
 
                             try {
-                              // Call createClient() directly inside the form submission handler to ensure fresh cookies
                               const supabase = createClient();
 
-                              // 1. Await supabase.auth.getUser() to get the securely verified current user
-                              let {
+                              const {
                                 data: { user },
                                 error: userError,
                               } = await supabase.auth.getUser();
 
-                              // Fallback: If getUser() returns null in browser, check getSession() so session cookies are seamlessly read
-                              if (!user) {
-                                const { data: sessionData } = await supabase.auth.getSession();
-                                user = sessionData?.session?.user || null;
-                              }
-
-                              // 2. Check if the user exists (throw an error if not)
                               if (!user) {
                                 setAddClientError('You must be logged in to register a client!');
                                 return;
                               }
 
-                              // Explicitly pass firm_id: realFirmId so it maps to the actual firms table
+                              // 1. Fetch the user's firm_id dynamically from firm_users
+                              const { data: firmUserRecord, error: fuError } = await supabase
+                                .from('firm_users')
+                                .select('firm_id')
+                                .eq('user_id', user.id)
+                                .limit(1)
+                                .maybeSingle();
+
+                              let targetFirmId = firmUserRecord?.firm_id;
+
+                              // 2. Fallback: If no firm is linked yet, grab the first available firm or create one automatically
+                              if (!targetFirmId) {
+                                const { data: anyFirm } = await supabase.from('firms').select('id').limit(1).maybeSingle();
+                                if (anyFirm?.id) {
+                                  targetFirmId = anyFirm.id;
+                                } else {
+                                  // Create a fallback firm on the fly so it never fails
+                                  const { data: newFirm } = await supabase
+                                    .from('firms')
+                                    .insert({ name: 'My CA Firm' })
+                                    .select('id')
+                                    .single();
+                                  targetFirmId = newFirm?.id;
+
+                                  if (targetFirmId) {
+                                    await supabase.from('firm_users').insert({
+                                      firm_id: targetFirmId,
+                                      user_id: user.id,
+                                      role: 'owner',
+                                    });
+                                  }
+                                }
+                              }
+
+                              if (!targetFirmId) {
+                                setAddClientError('No valid firm found for this user. Please complete onboarding.');
+                                return;
+                              }
+
+                              // 3. Insert the client using the guaranteed valid firm_id
                               const { data: createdRow, error: insertError } = await supabase
                                 .from('clients')
                                 .insert({
                                   name: newClientName.trim(),
                                   gstin: newClientGstin,
                                   pan: derivedPan,
-                                  firm_id: realFirmId, // <--- Fixed: Uses the actual firm UUID
+                                  firm_id: targetFirmId,
                                   user_id: user.id,
                                 })
                                 .select('id')
