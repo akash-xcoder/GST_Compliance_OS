@@ -121,7 +121,7 @@ export function FirstRunOnboardingModal() {
           const { data: newClient } = await supabase
             .from('clients')
             .insert({
-              firm_id: targetFirmId,
+              firm_id: user.id,
               user_id: user.id,
               name: clientName,
               gstin: clientGstin,

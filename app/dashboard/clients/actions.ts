@@ -18,28 +18,23 @@ export async function createClientAction(
   try {
     const supabase = await createClient();
 
-    // 1. Authenticate user
+    // 1. Await supabase.auth.getUser() to get the securely verified current user
     const {
       data: { user },
       error: userError,
     } = await supabase.auth.getUser();
 
+    // 2. Check if the user exists (throw an error if not)
     if (userError || !user) {
-      return { error: 'Authentication required. Please sign in again.' };
+      return { error: 'You must be logged in! Authentication required.' };
     }
 
-    // 2. Fetch user's firm membership
-    const { data: membership, error: membershipError } = await supabase
+    // Optional: fetch user's firm membership for context if exists
+    const { data: membership } = await supabase
       .from('firm_users')
       .select('firm_id')
       .eq('user_id', user.id)
       .maybeSingle();
-
-    if (membershipError || !membership?.firm_id) {
-      return { error: 'No active CA firm associated with your account. Please complete onboarding.' };
-    }
-
-    const firmId = membership.firm_id;
 
     // 3. Extract and sanitize form values
     const name = (formData.get('name') as string)?.trim();
@@ -72,11 +67,12 @@ export async function createClientAction(
       };
     }
 
-    // 6. Insert client into `clients` table
+    // 6. Insert client into `clients` table with firm_id: user.id to satisfy RLS (firm_id = auth.uid())
     const { data: client, error: insertError } = await supabase
       .from('clients')
       .insert({
-        firm_id: firmId,
+        firm_id: user.id,
+        user_id: user.id,
         name,
         gstin: rawGstin,
         pan: rawPan,

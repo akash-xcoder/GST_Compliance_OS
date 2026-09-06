@@ -107,7 +107,7 @@ export async function completeOnboarding(formData: FormData): Promise<Onboarding
   const { data: newClient, error: clientInsertError } = await supabase
     .from('clients')
     .insert({
-      firm_id: firmId,
+      firm_id: user.id,
       user_id: user.id,
       name: clientName,
       gstin: clientGstin,

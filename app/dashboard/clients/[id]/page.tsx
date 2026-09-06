@@ -100,38 +100,6 @@ export default async function ClientWorkspacePage({ params }: PageProps) {
     console.error('Error querying documents table:', err);
   }
 
-  // If no documents found in DB, provide realistic sample compliance documents
-  if (initialDocuments.length === 0) {
-    initialDocuments = [
-      {
-        id: `sample-doc-1`,
-        client_id: id,
-        firm_id: realFirmId,
-        storage_path: `${realFirmId}/${id}/2023/10/purchase_register_1697112000000_PR_Oct2023_Final.xlsx`,
-        doc_type: 'Purchase Register',
-        period_month: 10,
-        period_year: 2023,
-        file_name: 'PR_Oct2023_Final.xlsx',
-        file_size: 245760,
-        status: 'uploaded',
-        created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
-      },
-      {
-        id: `sample-doc-2`,
-        client_id: id,
-        firm_id: realFirmId,
-        storage_path: `${realFirmId}/${id}/2023/10/gstr_2b_1697198400000_GSTR2B_Oct2023_Portal.json`,
-        doc_type: 'GSTR-2B',
-        period_month: 10,
-        period_year: 2023,
-        file_name: 'GSTR2B_Oct2023_Portal.json',
-        file_size: 512000,
-        status: 'uploaded',
-        created_at: new Date(Date.now() - 1 * 86400000).toISOString(),
-      },
-    ];
-  }
-
   return (
     <ClientWorkspaceClient
       client={client}

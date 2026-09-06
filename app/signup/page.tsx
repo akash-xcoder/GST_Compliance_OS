@@ -2,9 +2,8 @@
 
 import React, { useState, useTransition } from 'react';
 import Link from 'next/link';
-import { Building2, Lock, Mail, User, ArrowRight, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Building2, Lock, Mail, User, ArrowRight, AlertCircle, ShieldCheck, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { signUp } from '@/app/actions/auth';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
 import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton';
@@ -15,7 +14,9 @@ export default function SignupPage() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   React.useEffect(() => {
@@ -31,58 +32,60 @@ export default function SignupPage() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
-
-    const formData = new FormData(e.currentTarget);
+    setSuccessMsg(null);
 
     startTransition(async () => {
       try {
-        const result = await signUp(formData);
-        if (result?.error) {
-          setError(result.error);
-        }
-      } catch (err: unknown) {
-        if (err instanceof Error && err.message.includes('NEXT_REDIRECT')) {
+        const supabase = createClient();
+        const { data, error: signupError } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            data: {
+              full_name: fullName.trim(),
+              firm_name: firmName.trim() || 'Akash Tax Firm',
+            },
+          },
+        });
+
+        if (signupError) {
+          setError(signupError.message);
           return;
         }
 
-        // Client-side fallback for SPA mode
-        try {
-          const supabase = createClient();
-          const { data, error: clientSignupError } = await supabase.auth.signUp({
-            email,
-            password,
-            options: {
-              data: {
-                full_name: fullName,
-                firm_name: firmName,
-              },
-            },
-          });
+        // Pre-create firm entry if user is active
+        if (data?.user?.id && firmName.trim()) {
+          try {
+            const { data: newFirm } = await supabase
+              .from('firms')
+              .insert({ name: firmName.trim() })
+              .select('id')
+              .single();
 
-          if (clientSignupError) {
-            setError(clientSignupError.message || 'Failed to register account.');
-          } else {
-            // Pre-create firm if possible
-            if (data.user && firmName) {
-              const { data: newFirm } = await supabase
-                .from('firms')
-                .insert({ name: firmName })
-                .select('id')
-                .single();
-
-              if (newFirm?.id) {
-                await supabase.from('firm_users').insert({
-                  firm_id: newFirm.id,
-                  user_id: data.user.id,
-                  role: 'owner',
-                });
-              }
+            if (newFirm?.id) {
+              await supabase.from('firm_users').insert({
+                firm_id: newFirm.id,
+                user_id: data.user.id,
+                role: 'owner',
+              });
             }
-            router.push('/dashboard/onboarding');
+          } catch {
+            // Ignored if handled in onboarding
           }
-        } catch (clientErr: any) {
-          setError(clientErr?.message || 'Failed to complete registration.');
         }
+
+        if (data?.session) {
+          router.push('/dashboard');
+          router.refresh();
+        } else {
+          setSuccessMsg('Account created successfully! You can now log in.');
+          setTimeout(() => {
+            router.push('/dashboard');
+            router.refresh();
+          }, 1500);
+        }
+      } catch (clientErr: any) {
+        setError(clientErr?.message || 'Failed to complete registration.');
       }
     });
   };
@@ -116,6 +119,13 @@ export default function SignupPage() {
             <div className="mb-5 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span className="leading-relaxed">{error}</span>
+            </div>
+          )}
+
+          {successMsg && (
+            <div className="mb-5 p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start gap-2.5">
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+              <span className="leading-relaxed">{successMsg}</span>
             </div>
           )}
 
@@ -204,18 +214,32 @@ export default function SignupPage() {
                 Password
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
                 <input
                   id="password"
                   name="password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Minimum 6 characters"
                   disabled={isPending}
-                  className="w-full pl-10 pr-3 py-2.5 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all bg-white disabled:opacity-60"
+                  className="w-full pl-10 pr-10 py-2.5 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all bg-white disabled:opacity-60"
                 />
+                <button
+                  type="button"
+                  id="toggle-signup-pwd-btn"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer p-0.5 rounded transition-colors"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
               </div>
             </div>
 

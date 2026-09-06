@@ -33,6 +33,7 @@ export interface ClientContextType {
   // Additional persistence & compatibility fields
   selectedClient: Client | null;
   selectedClientId: string | null;
+  activeClientId: string | null;
   isLoading: boolean;
   error: string | null;
   setSelectedClientId: (id: string | null) => void;
@@ -61,6 +62,7 @@ const ClientContext = createContext<ClientContextType>({
   loading: true,
   selectedClient: null,
   selectedClientId: null,
+  activeClientId: null,
   isLoading: true,
   error: null,
   setSelectedClientId: () => {},
@@ -291,6 +293,7 @@ export const ClientProvider = ({
       loading,
       selectedClient: currentClient,
       selectedClientId: currentClient?.id || null,
+      activeClientId: currentClient?.id || null,
       isLoading: loading,
       error,
       setSelectedClientId,

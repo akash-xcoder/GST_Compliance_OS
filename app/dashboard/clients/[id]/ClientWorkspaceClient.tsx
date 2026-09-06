@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
+import { useClient } from '@/context/ClientContext';
 import {
   Building2,
   Hash,
@@ -86,6 +88,136 @@ export function ClientWorkspaceClient({
     message: string;
   } | null>(null);
 
+  const { activeClientId: ctxActiveClientId, selectedClientId } = useClient();
+  const activeClientId = client?.id || ctxActiveClientId || selectedClientId || '';
+
+  // Real client overview metrics pulled from Supabase (defaults to 0 for a new client)
+  const [invoiceMetrics, setInvoiceMetrics] = useState({
+    totalInvoices: 0,
+    purchaseCount: 0,
+    salesCount: 0,
+    itcEligible: 0,
+    matchedCount: 0,
+    matchedPercentage: 0,
+    pendingExceptionsCount: 0,
+    pendingExceptionsAmount: 0,
+    isLoading: true,
+  });
+
+  const fetchClientMetrics = useCallback(async () => {
+    if (!activeClientId) {
+      setInvoiceMetrics({
+        totalInvoices: 0,
+        purchaseCount: 0,
+        salesCount: 0,
+        itcEligible: 0,
+        matchedCount: 0,
+        matchedPercentage: 0,
+        pendingExceptionsCount: 0,
+        pendingExceptionsAmount: 0,
+        isLoading: false,
+      });
+      return;
+    }
+
+    try {
+      const supabase = createClient();
+
+      // Fetch the real count of invoices for this specific client
+      const { count: realInvoiceCount, error: countError } = await supabase
+        .from('invoices')
+        .select('*', { count: 'exact', head: true })
+        .eq('client_id', activeClientId);
+
+      if (countError) {
+        console.warn('Notice querying realInvoiceCount:', countError.message);
+      }
+
+      const { data: invoices, error } = await supabase
+        .from('invoices')
+        .select('id, source, taxable_value, cgst, sgst, igst, total_amount, recon_status, status, match_status')
+        .eq('client_id', activeClientId);
+
+      if (error && !realInvoiceCount) {
+        console.warn('Error fetching invoices for active client:', error.message);
+        setInvoiceMetrics((prev) => ({ ...prev, isLoading: false }));
+        return;
+      }
+
+      if ((realInvoiceCount === 0 || realInvoiceCount === null) && (!invoices || invoices.length === 0)) {
+        setInvoiceMetrics({
+          totalInvoices: realInvoiceCount ?? 0,
+          purchaseCount: 0,
+          salesCount: 0,
+          itcEligible: 0,
+          matchedCount: 0,
+          matchedPercentage: 0,
+          pendingExceptionsCount: 0,
+          pendingExceptionsAmount: 0,
+          isLoading: false,
+        });
+        return;
+      }
+
+      const total = realInvoiceCount ?? (invoices?.length || 0);
+      let purchase = 0;
+      let sales = 0;
+      let itc = 0;
+      let matched = 0;
+      let exceptionsCount = 0;
+      let exceptionsAmount = 0;
+
+      for (const inv of invoices) {
+        const src = (inv.source || '').toLowerCase();
+        const recon = (inv.recon_status || inv.status || inv.match_status || '').toLowerCase();
+
+        if (src.includes('sale') || src === 'sales') {
+          sales++;
+        } else {
+          purchase++;
+        }
+
+        const invTax = Number(inv.cgst || 0) + Number(inv.sgst || 0) + Number(inv.igst || 0);
+        if (src === 'gstr_2b' || src === '2b' || src === 'books' || src.includes('purchase')) {
+          itc += invTax;
+        }
+
+        if (recon === 'matched' || recon === 'reconciled' || recon === 'exact_match') {
+          matched++;
+        } else if (
+          recon === 'unmatched' ||
+          recon === 'mismatch' ||
+          recon.includes('missing') ||
+          recon.includes('mismatch')
+        ) {
+          exceptionsCount++;
+          exceptionsAmount += invTax > 0 ? invTax : Number(inv.total_amount || 0);
+        }
+      }
+
+      const matchPct = total > 0 ? Number(((matched / total) * 100).toFixed(1)) : 0;
+
+      setInvoiceMetrics({
+        totalInvoices: total,
+        purchaseCount: purchase,
+        salesCount: sales,
+        itcEligible: itc,
+        matchedCount: matched,
+        matchedPercentage: matchPct,
+        pendingExceptionsCount: exceptionsCount,
+        pendingExceptionsAmount: exceptionsAmount,
+        isLoading: false,
+      });
+    } catch (err: any) {
+      console.warn('Failed to query client invoices from Supabase:', err?.message);
+      setInvoiceMetrics((prev) => ({ ...prev, isLoading: false }));
+    }
+  }, [activeClientId]);
+
+  useEffect(() => {
+    fetchClientMetrics();
+  }, [fetchClientMetrics]);
+
   // Derive state code from first 2 digits of GSTIN
   const stateCode = client.gstin.slice(0, 2);
 
@@ -116,7 +248,8 @@ export function ClientWorkspaceClient({
               res.source === 'books' ? 'Books of Accounts' : 'GSTR-2B'
             }).`,
         });
-        // Refresh the page to synchronize server state
+        // Refresh live client metrics and synchronize server state
+        fetchClientMetrics();
         router.refresh();
       } else {
         setDocuments((prev) =>
@@ -300,15 +433,23 @@ export function ClientWorkspaceClient({
       {/* Tab 1: Client Overview */}
       {activeTab === 'overview' && (
         <div className="flex flex-col gap-6">
-          {/* 4 Client-Specific Metric Cards */}
+          {/* 4 Client-Specific Metric Cards pulled from Supabase for activeClientId */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
               <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                 Total Invoices (FY)
               </p>
-              <p className="text-3xl font-bold mt-2.5 text-slate-900">418</p>
+              <p className="text-3xl font-bold mt-2.5 text-slate-900">
+                {invoiceMetrics.isLoading ? (
+                  <span className="inline-block w-12 h-8 bg-slate-100 rounded animate-pulse" />
+                ) : (
+                  invoiceMetrics.totalInvoices.toLocaleString('en-IN')
+                )}
+              </p>
               <div className="mt-2 text-xs text-slate-500 font-medium">
-                324 Purchase &bull; 94 Sales
+                {invoiceMetrics.isLoading
+                  ? 'Loading count...'
+                  : `${invoiceMetrics.purchaseCount} Purchase \u2022 ${invoiceMetrics.salesCount} Sales`}
               </div>
             </div>
 
@@ -317,11 +458,21 @@ export function ClientWorkspaceClient({
                 ITC Eligible (2B)
               </p>
               <p className="text-3xl font-bold mt-2.5 text-emerald-600 font-mono">
-                ₹18,42,500
+                {invoiceMetrics.isLoading ? (
+                  <span className="inline-block w-24 h-8 bg-slate-100 rounded animate-pulse" />
+                ) : (
+                  `₹${invoiceMetrics.itcEligible.toLocaleString('en-IN')}`
+                )}
               </p>
               <div className="mt-2 text-xs text-emerald-600 font-medium flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Auto-drafted from GST Portal</span>
+                <span>
+                  {invoiceMetrics.isLoading
+                    ? 'Fetching portal data...'
+                    : invoiceMetrics.totalInvoices === 0
+                    ? 'No ITC records'
+                    : 'Auto-drafted from GST Portal'}
+                </span>
               </div>
             </div>
 
@@ -330,10 +481,16 @@ export function ClientWorkspaceClient({
                 Matched In Books
               </p>
               <p className="text-3xl font-bold mt-2.5 text-indigo-600 font-mono">
-                94.8%
+                {invoiceMetrics.isLoading ? (
+                  <span className="inline-block w-16 h-8 bg-slate-100 rounded animate-pulse" />
+                ) : (
+                  `${invoiceMetrics.matchedPercentage}%`
+                )}
               </p>
               <div className="mt-2 text-xs text-indigo-600 font-medium">
-                382 invoices reconciled
+                {invoiceMetrics.isLoading
+                  ? 'Calculating...'
+                  : `${invoiceMetrics.matchedCount} invoices reconciled`}
               </div>
             </div>
 
@@ -342,11 +499,21 @@ export function ClientWorkspaceClient({
                 Pending Exceptions
               </p>
               <p className="text-3xl font-bold mt-2.5 text-rose-600 font-mono">
-                ₹84,200
+                {invoiceMetrics.isLoading ? (
+                  <span className="inline-block w-20 h-8 bg-slate-100 rounded animate-pulse" />
+                ) : (
+                  `₹${invoiceMetrics.pendingExceptionsAmount.toLocaleString('en-IN')}`
+                )}
               </p>
               <div className="mt-2 text-xs text-rose-600 font-medium flex items-center gap-1">
                 <AlertTriangle className="w-3.5 h-3.5" />
-                <span>6 missing in Purchase Register</span>
+                <span>
+                  {invoiceMetrics.isLoading
+                    ? 'Checking anomalies...'
+                    : invoiceMetrics.pendingExceptionsCount === 0
+                    ? '0 pending exceptions'
+                    : `${invoiceMetrics.pendingExceptionsCount} missing in Purchase Register`}
+                </span>
               </div>
             </div>
           </div>

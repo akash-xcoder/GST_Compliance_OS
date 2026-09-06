@@ -2,7 +2,7 @@
 
 import React, { useState, useTransition } from 'react';
 import Link from 'next/link';
-import { Lock, Mail, ArrowRight, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Lock, Mail, ArrowRight, AlertCircle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { signIn } from '@/app/actions/auth';
 import { createClient } from '@/utils/supabase/client';
@@ -13,6 +13,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -30,37 +31,24 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
 
-    const formData = new FormData(e.currentTarget);
-
     startTransition(async () => {
       try {
-        // First try server action
-        const result = await signIn(formData);
-        if (result?.error) {
-          setError(result.error);
-        }
-      } catch (err: unknown) {
-        // If Next.js redirect was thrown, let it navigate
-        if (err instanceof Error && err.message.includes('NEXT_REDIRECT')) {
+        const supabase = createClient();
+        const { data, error: authError } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+
+        if (authError) {
+          setError(authError.message || 'Invalid login credentials.');
           return;
         }
 
-        // Fallback to client-side Supabase auth if in SPA or API route bridge
-        try {
-          const supabase = createClient();
-          const { error: clientAuthError } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-          });
-
-          if (clientAuthError) {
-            setError(clientAuthError.message || 'Invalid email or password.');
-          } else {
-            router.push('/dashboard');
-          }
-        } catch (clientErr: any) {
-          setError(clientErr?.message || 'Failed to authenticate. Please check your credentials.');
-        }
+        // Successfully authenticated! Supabase sets session cookies & local auth state
+        router.push('/dashboard');
+        router.refresh();
+      } catch (err: any) {
+        setError(err?.message || 'Failed to authenticate. Please check your credentials.');
       }
     });
   };
@@ -144,18 +132,32 @@ export default function LoginPage() {
                 </label>
               </div>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
                 <input
                   id="password"
                   name="password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   disabled={isPending}
-                  className="w-full pl-10 pr-3 py-2.5 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all bg-white disabled:opacity-60"
+                  className="w-full pl-10 pr-10 py-2.5 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all bg-white disabled:opacity-60"
                 />
+                <button
+                  type="button"
+                  id="toggle-login-pwd-btn"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer p-0.5 rounded transition-colors"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
               </div>
             </div>
 

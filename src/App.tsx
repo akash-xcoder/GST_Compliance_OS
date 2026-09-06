@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
   ArrowRight,
@@ -35,12 +35,14 @@ import {
   Layers,
   Loader2,
   Sparkles,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { validateGSTIN, extractPANFromGSTIN, validatePAN } from '@/lib/validations/gst';
 import { ReconciliationView } from '@/components/reconciliation/ReconciliationView';
 import { Uploader } from '@/components/documents/Uploader';
-import { createClient } from '@/utils/supabase/client';
+import { createClient, createBrowserClient } from '@/utils/supabase/client';
 import { ClientProvider, useClient } from '@/context/ClientContext';
 import { ClientSwitcher } from '@/components/ClientSwitcher';
 import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton';
@@ -81,8 +83,115 @@ function AppInternal() {
   const [onboardingInput, setOnboardingInput] = useState('');
   const [onboardingError, setOnboardingError] = useState('');
 
-  // Valid DB UUIDs default
-  const [realFirmId, setRealFirmId] = useState<string>('a763af2b-c7ea-4a56-b448-513df5ca0dfa');
+  // Active DB firm ID
+  const [realFirmId, setRealFirmId] = useState<string>('');
+
+  // Real Auth Form States
+  const [loginEmail, setLoginEmail] = useState('ca.partner@firm.in');
+  const [loginPassword, setLoginPassword] = useState('password123');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  const [signupFirmName, setSignupFirmName] = useState('Kapur & Associates, CAs');
+  const [signupFullName, setSignupFullName] = useState('CA Rajesh Kapur');
+  const [signupEmail, setSignupEmail] = useState('partner@kapurassociates.in');
+  const [signupPassword, setSignupPassword] = useState('password123');
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [signupError, setSignupError] = useState<string | null>(null);
+  const [signupLoading, setSignupLoading] = useState(false);
+
+  const handleRealLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    setLoginLoading(true);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: loginEmail.trim(),
+        password: loginPassword,
+      });
+
+      if (error) {
+        setLoginError(error.message);
+        setLoginLoading(false);
+        return;
+      }
+
+      if (data?.user?.id) {
+        setCurrentUser(data.user);
+        const { data: fu } = await supabase
+          .from('firm_users')
+          .select('firm_id')
+          .eq('user_id', data.user.id)
+          .limit(1)
+          .maybeSingle();
+
+        if (fu?.firm_id) {
+          setRealFirmId(fu.firm_id);
+          setCurrentRoute('dashboard');
+        } else {
+          setCurrentRoute('onboarding');
+        }
+      } else {
+        setCurrentRoute('dashboard');
+      }
+    } catch (err: any) {
+      setLoginError(err?.message || 'Login failed. Please check your credentials.');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleRealSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSignupError(null);
+    setSignupLoading(true);
+
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.auth.signUp({
+        email: signupEmail.trim(),
+        password: signupPassword,
+        options: {
+          data: {
+            full_name: signupFullName.trim(),
+            firm_name: signupFirmName.trim(),
+          },
+        },
+      });
+
+      if (error) {
+        setSignupError(error.message);
+        setSignupLoading(false);
+        return;
+      }
+
+      if (data?.user?.id) {
+        setCurrentUser(data.user);
+        const { data: firmData } = await supabase
+          .from('firms')
+          .insert({ name: signupFirmName.trim() })
+          .select('id')
+          .single();
+
+        if (firmData?.id) {
+          await supabase.from('firm_users').insert({
+            firm_id: firmData.id,
+            user_id: data.user.id,
+            role: 'owner',
+          });
+          setRealFirmId(firmData.id);
+        }
+      }
+      setCurrentRoute('onboarding');
+    } catch (err: any) {
+      setSignupError(err?.message || 'Registration failed.');
+    } finally {
+      setSignupLoading(false);
+    }
+  };
 
   // selectedClientId managed via useClient()
   const [clientWorkspaceTab, setClientWorkspaceTab] = useState<'overview' | 'documents' | 'reconciliation'>('overview');
@@ -128,8 +237,17 @@ function AppInternal() {
         } = await supabase.auth.getUser();
         setCurrentUser(user || null);
 
-        const { data: firmUser } = await supabase.from('firm_users').select('firm_id').single();
-        let targetFirmId = firmUser?.firm_id;
+        let targetFirmId = selectedFirmId;
+
+        if (!targetFirmId && user?.id) {
+          const { data: firmUser } = await supabase
+            .from('firm_users')
+            .select('firm_id')
+            .eq('user_id', user.id)
+            .limit(1)
+            .maybeSingle();
+          targetFirmId = firmUser?.firm_id;
+        }
 
         if (!targetFirmId) {
           const { data: anyFirm } = await supabase.from('firms').select('id, name').limit(1).maybeSingle();
@@ -204,6 +322,134 @@ function AppInternal() {
     }
     loadSupabaseData();
   }, [refreshClients, setContextFirmName]);
+
+  // Real client overview metrics for selected active client (defaults to 0 for a new client)
+  const activeClientId = activeClient?.id || selectedClientId || '';
+  const [activeClientMetrics, setActiveClientMetrics] = useState({
+    totalInvoices: 0,
+    purchaseCount: 0,
+    salesCount: 0,
+    itcEligible: 0,
+    matchedCount: 0,
+    matchedPercentage: 0,
+    pendingExceptionsCount: 0,
+    pendingExceptionsAmount: 0,
+    isLoading: false,
+  });
+
+  useEffect(() => {
+    if (!activeClientId) {
+      setActiveClientMetrics({
+        totalInvoices: 0,
+        purchaseCount: 0,
+        salesCount: 0,
+        itcEligible: 0,
+        matchedCount: 0,
+        matchedPercentage: 0,
+        pendingExceptionsCount: 0,
+        pendingExceptionsAmount: 0,
+        isLoading: false,
+      });
+      return;
+    }
+
+    let isMounted = true;
+    async function fetchClientMetrics() {
+      setActiveClientMetrics((prev) => ({ ...prev, isLoading: true }));
+      try {
+        const supabase = createClient();
+
+        // Fetch the real count of invoices for this specific client
+        const { count: realInvoiceCount } = await supabase
+          .from('invoices')
+          .select('*', { count: 'exact', head: true })
+          .eq('client_id', activeClientId);
+
+        const { data: invoices, error } = await supabase
+          .from('invoices')
+          .select('id, source, taxable_value, cgst, sgst, igst, total_amount, recon_status, status, match_status')
+          .eq('client_id', activeClientId);
+
+        if ((realInvoiceCount === 0 || realInvoiceCount === null) && (!invoices || invoices.length === 0)) {
+          if (isMounted) {
+            setActiveClientMetrics({
+              totalInvoices: realInvoiceCount ?? 0,
+              purchaseCount: 0,
+              salesCount: 0,
+              itcEligible: 0,
+              matchedCount: 0,
+              matchedPercentage: 0,
+              pendingExceptionsCount: 0,
+              pendingExceptionsAmount: 0,
+              isLoading: false,
+            });
+          }
+          return;
+        }
+
+        let total = realInvoiceCount ?? (invoices?.length || 0);
+        let purchase = 0;
+        let sales = 0;
+        let itc = 0;
+        let matched = 0;
+        let exceptionsCount = 0;
+        let exceptionsAmount = 0;
+
+        for (const inv of invoices) {
+          const src = (inv.source || '').toLowerCase();
+          const recon = (inv.recon_status || inv.status || inv.match_status || '').toLowerCase();
+
+          if (src.includes('sale') || src === 'sales') {
+            sales++;
+          } else {
+            purchase++;
+          }
+
+          const invTax = Number(inv.cgst || 0) + Number(inv.sgst || 0) + Number(inv.igst || 0);
+          if (src === 'gstr_2b' || src === '2b' || src === 'books' || src.includes('purchase')) {
+            itc += invTax;
+          }
+
+          if (recon === 'matched' || recon === 'reconciled' || recon === 'exact_match') {
+            matched++;
+          } else if (
+            recon === 'unmatched' ||
+            recon === 'mismatch' ||
+            recon.includes('missing') ||
+            recon.includes('mismatch')
+          ) {
+            exceptionsCount++;
+            exceptionsAmount += invTax > 0 ? invTax : Number(inv.total_amount || 0);
+          }
+        }
+
+        const matchPct = total > 0 ? Number(((matched / total) * 100).toFixed(1)) : 0;
+
+        if (isMounted) {
+          setActiveClientMetrics({
+            totalInvoices: total,
+            purchaseCount: purchase,
+            salesCount: sales,
+            itcEligible: itc,
+            matchedCount: matched,
+            matchedPercentage: matchPct,
+            pendingExceptionsCount: exceptionsCount,
+            pendingExceptionsAmount: exceptionsAmount,
+            isLoading: false,
+          });
+        }
+      } catch (e) {
+        if (isMounted) {
+          setActiveClientMetrics((prev) => ({ ...prev, isLoading: false }));
+        }
+      }
+    }
+
+    fetchClientMetrics();
+    return () => {
+      isMounted = false;
+    };
+  }, [activeClientId]);
 
   const [uploadDocType, setUploadDocType] = useState('Purchase Register');
   const [uploadMonth, setUploadMonth] = useState(10);
@@ -469,7 +715,14 @@ function AppInternal() {
                     </div>
                   </div>
 
-                  <form onSubmit={(e) => { e.preventDefault(); setCurrentRoute('onboarding'); }} className="space-y-4">
+                  {loginError && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                      <span>{loginError}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleRealLogin} className="space-y-4">
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1.5" htmlFor="email-preview">
                         CA Firm / Work Email
@@ -480,7 +733,8 @@ function AppInternal() {
                           id="email-preview"
                           type="email"
                           required
-                          defaultValue="ca.partner@firm.in"
+                          value={loginEmail}
+                          onChange={(e) => setLoginEmail(e.target.value)}
                           placeholder="ca.partner@firm.in"
                           className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
                         />
@@ -492,20 +746,35 @@ function AppInternal() {
                         Password
                       </label>
                       <div className="relative">
-                        <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                        <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
                         <input
                           id="password-preview"
-                          type="password"
+                          type={showLoginPassword ? 'text' : 'password'}
                           required
-                          defaultValue="password123"
+                          value={loginPassword}
+                          onChange={(e) => setLoginPassword(e.target.value)}
                           placeholder="••••••••"
-                          className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                          className="w-full pl-9 pr-10 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
                         />
+                        <button
+                          type="button"
+                          id="toggle-login-password-btn"
+                          onClick={() => setShowLoginPassword((prev) => !prev)}
+                          className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer p-0.5 rounded transition-colors"
+                          aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                          title={showLoginPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showLoginPassword ? (
+                            <EyeOff className="w-4 h-4" />
+                          ) : (
+                            <Eye className="w-4 h-4" />
+                          )}
+                        </button>
                       </div>
                     </div>
 
-                    <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white gap-2 font-semibold shadow-sm">
-                      <span>Sign In & Continue</span>
+                    <Button type="submit" disabled={loginLoading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white gap-2 font-semibold shadow-sm cursor-pointer disabled:opacity-50">
+                      <span>{loginLoading ? 'Signing In...' : 'Sign In & Continue'}</span>
                       <ArrowRight className="w-4 h-4" />
                     </Button>
                   </form>
@@ -543,7 +812,14 @@ function AppInternal() {
                     </div>
                   </div>
 
-                  <form onSubmit={(e) => { e.preventDefault(); setCurrentRoute('onboarding'); }} className="space-y-4">
+                  {signupError && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                      <span>{signupError}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleRealSignup} className="space-y-4">
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1.5">
                         CA Firm Name
@@ -553,7 +829,8 @@ function AppInternal() {
                         <input
                           type="text"
                           required
-                          defaultValue="Kapur & Associates, CAs"
+                          value={signupFirmName}
+                          onChange={(e) => setSignupFirmName(e.target.value)}
                           placeholder="Kapur & Associates, CAs"
                           className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
@@ -569,7 +846,8 @@ function AppInternal() {
                         <input
                           type="text"
                           required
-                          defaultValue="CA Rajesh Kapur"
+                          value={signupFullName}
+                          onChange={(e) => setSignupFullName(e.target.value)}
                           placeholder="CA Rajesh Kapur"
                           className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
@@ -585,7 +863,8 @@ function AppInternal() {
                         <input
                           type="email"
                           required
-                          defaultValue="partner@kapurassociates.in"
+                          value={signupEmail}
+                          onChange={(e) => setSignupEmail(e.target.value)}
                           placeholder="partner@kapurassociates.in"
                           className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
@@ -597,19 +876,34 @@ function AppInternal() {
                         Password
                       </label>
                       <div className="relative">
-                        <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                        <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
                         <input
-                          type="password"
+                          type={showSignupPassword ? 'text' : 'password'}
                           required
-                          defaultValue="password123"
+                          value={signupPassword}
+                          onChange={(e) => setSignupPassword(e.target.value)}
                           placeholder="••••••••"
-                          className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          className="w-full pl-9 pr-10 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
+                        <button
+                          type="button"
+                          id="toggle-signup-password-btn"
+                          onClick={() => setShowSignupPassword((prev) => !prev)}
+                          className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer p-0.5 rounded transition-colors"
+                          aria-label={showSignupPassword ? 'Hide password' : 'Show password'}
+                          title={showSignupPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showSignupPassword ? (
+                            <EyeOff className="w-4 h-4" />
+                          ) : (
+                            <Eye className="w-4 h-4" />
+                          )}
+                        </button>
                       </div>
                     </div>
 
-                    <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white gap-2 font-semibold shadow-sm">
-                      <span>Create Firm Account</span>
+                    <Button type="submit" disabled={signupLoading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white gap-2 font-semibold shadow-sm cursor-pointer disabled:opacity-50">
+                      <span>{signupLoading ? 'Creating Account...' : 'Create Firm Account'}</span>
                       <ArrowRight className="w-4 h-4" />
                     </Button>
                   </form>
@@ -1157,9 +1451,17 @@ function AppInternal() {
                                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                                     Total Invoices (FY)
                                   </p>
-                                  <p className="text-3xl font-bold mt-2.5 text-slate-900">418</p>
+                                  <p className="text-3xl font-bold mt-2.5 text-slate-900">
+                                    {activeClientMetrics.isLoading ? (
+                                      <span className="inline-block w-12 h-8 bg-slate-100 rounded animate-pulse" />
+                                    ) : (
+                                      activeClientMetrics.totalInvoices.toLocaleString('en-IN')
+                                    )}
+                                  </p>
                                   <div className="mt-2 text-xs text-slate-500 font-medium">
-                                    324 Purchase &bull; 94 Sales
+                                    {activeClientMetrics.isLoading
+                                      ? 'Loading count...'
+                                      : `${activeClientMetrics.purchaseCount} Purchase \u2022 ${activeClientMetrics.salesCount} Sales`}
                                   </div>
                                 </div>
 
@@ -1168,11 +1470,21 @@ function AppInternal() {
                                     ITC Eligible (2B)
                                   </p>
                                   <p className="text-3xl font-bold mt-2.5 text-emerald-600 font-mono">
-                                    ₹18,42,500
+                                    {activeClientMetrics.isLoading ? (
+                                      <span className="inline-block w-24 h-8 bg-slate-100 rounded animate-pulse" />
+                                    ) : (
+                                      `₹${activeClientMetrics.itcEligible.toLocaleString('en-IN')}`
+                                    )}
                                   </p>
                                   <div className="mt-2 text-xs text-emerald-600 font-medium flex items-center gap-1">
                                     <CheckCircle2 className="w-3.5 h-3.5" />
-                                    <span>Auto-drafted from GST Portal</span>
+                                    <span>
+                                      {activeClientMetrics.isLoading
+                                        ? 'Fetching portal data...'
+                                        : activeClientMetrics.totalInvoices === 0
+                                        ? 'No ITC records'
+                                        : 'Auto-drafted from GST Portal'}
+                                    </span>
                                   </div>
                                 </div>
 
@@ -1181,10 +1493,16 @@ function AppInternal() {
                                     Matched In Books
                                   </p>
                                   <p className="text-3xl font-bold mt-2.5 text-indigo-600 font-mono">
-                                    94.8%
+                                    {activeClientMetrics.isLoading ? (
+                                      <span className="inline-block w-16 h-8 bg-slate-100 rounded animate-pulse" />
+                                    ) : (
+                                      `${activeClientMetrics.matchedPercentage}%`
+                                    )}
                                   </p>
                                   <div className="mt-2 text-xs text-indigo-600 font-medium">
-                                    382 invoices reconciled
+                                    {activeClientMetrics.isLoading
+                                      ? 'Calculating...'
+                                      : `${activeClientMetrics.matchedCount} invoices reconciled`}
                                   </div>
                                 </div>
 
@@ -1193,11 +1511,21 @@ function AppInternal() {
                                     Pending Exceptions
                                   </p>
                                   <p className="text-3xl font-bold mt-2.5 text-rose-600 font-mono">
-                                    ₹84,200
+                                    {activeClientMetrics.isLoading ? (
+                                      <span className="inline-block w-20 h-8 bg-slate-100 rounded animate-pulse" />
+                                    ) : (
+                                      `₹${activeClientMetrics.pendingExceptionsAmount.toLocaleString('en-IN')}`
+                                    )}
                                   </p>
                                   <div className="mt-2 text-xs text-rose-600 font-medium flex items-center gap-1">
                                     <AlertTriangle className="w-3.5 h-3.5" />
-                                    <span>6 missing in Purchase Register</span>
+                                    <span>
+                                      {activeClientMetrics.isLoading
+                                        ? 'Checking anomalies...'
+                                        : activeClientMetrics.pendingExceptionsCount === 0
+                                        ? '0 pending exceptions'
+                                        : `${activeClientMetrics.pendingExceptionsCount} missing in Purchase Register`}
+                                    </span>
                                   </div>
                                 </div>
                               </div>
@@ -1874,13 +2202,39 @@ function AppInternal() {
                             }
 
                             try {
+                              // Call createClient() directly inside the form submission handler to ensure fresh cookies
                               const supabase = createClient();
-                              const { data: createdRow, error: insertError } = await supabase.from('clients').insert({
-                                firm_id: selectedFirmId || realFirmId,
-                                name: newClientName.trim(),
-                                gstin: newClientGstin,
-                                pan: derivedPan,
-                              }).select('id').single();
+
+                              // 1. Await supabase.auth.getUser() to get the securely verified current user
+                              let {
+                                data: { user },
+                                error: userError,
+                              } = await supabase.auth.getUser();
+
+                              // Fallback: If getUser() returns null in browser, check getSession() so session cookies are seamlessly read
+                              if (!user) {
+                                const { data: sessionData } = await supabase.auth.getSession();
+                                user = sessionData?.session?.user || null;
+                              }
+
+                              // 2. Check if the user exists (throw an error if not)
+                              if (!user) {
+                                setAddClientError('You must be logged in to register a client!');
+                                return;
+                              }
+
+                              // 3. Explicitly pass firm_id: user.id in the .insert() payload so it perfectly matches the RLS requirement (firm_id = auth.uid())
+                              const { data: createdRow, error: insertError } = await supabase
+                                .from('clients')
+                                .insert({
+                                  name: newClientName.trim(),
+                                  gstin: newClientGstin,
+                                  pan: derivedPan,
+                                  firm_id: user.id,
+                                  user_id: user.id,
+                                })
+                                .select('id')
+                                .single();
 
                               if (insertError) {
                                 setAddClientError(insertError.message || 'Failed to register client entity.');
@@ -1892,6 +2246,9 @@ function AppInternal() {
                                 setSelectedClientId(createdRow.id);
                               }
                               setIsAddClientModalOpen(false);
+                              setNewClientName('');
+                              setNewClientGstin('');
+                              setNewClientPan('');
                             } catch (err: any) {
                               setAddClientError(err?.message || 'Failed to create client entity.');
                             }

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { validateGSTIN, extractPANFromGSTIN, validatePAN } from '@/lib/validations/gst';
+import { createClient } from '@/utils/supabase/client';
 import { createClientAction, deleteClient } from './actions';
 
 export interface ClientItem {
@@ -93,30 +94,71 @@ export function ClientListClient({ initialClients, firmName = 'CA Practice' }: C
       return;
     }
 
-    const formData = new FormData();
-    formData.append('name', name.trim());
-    formData.append('gstin', gstin);
-    formData.append('pan', effectivePan);
-
     startTransition(async () => {
-      const result = await createClientAction(null, formData);
-      if (result.error) {
-        setFormError(result.error);
-      } else {
-        // Add optimistically or from server
+      try {
+        // Call createClient() directly inside the form submission handler to ensure fresh cookies
+        const supabase = createClient();
+
+        // 1. Await supabase.auth.getUser() to get the securely verified current user
+        let {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+
+        // Fallback: If getUser() returns null in browser, check getSession() so session cookies are seamlessly read
+        if (!user) {
+          const { data: sessionData } = await supabase.auth.getSession();
+          user = sessionData?.session?.user || null;
+        }
+
+        // 2. Check if the user exists (throw an error if not)
+        if (!user) {
+          setFormError('You must be logged in to register a client!');
+          return;
+        }
+
+        // 3. Explicitly pass firm_id: user.id in the .insert() payload so it perfectly matches the RLS requirement (firm_id = auth.uid())
+        const { data: newClientRow, error: insertError } = await supabase
+          .from('clients')
+          .insert({
+            name: name.trim(),
+            gstin,
+            pan: effectivePan,
+            firm_id: user.id,
+            user_id: user.id,
+          })
+          .select('id')
+          .single();
+
+        if (insertError) {
+          // If RLS or constraint error, fall back to server action as backup
+          const formData = new FormData();
+          formData.append('name', name.trim());
+          formData.append('gstin', gstin);
+          formData.append('pan', effectivePan);
+
+          const result = await createClientAction(null, formData);
+          if (result.error) {
+            setFormError(result.error);
+            return;
+          }
+        }
+
+        // Add to state and close
         const newClient: ClientItem = {
-          id: result.clientId || `client-${Date.now()}`,
+          id: newClientRow?.id || `client-${Date.now()}`,
           name: name.trim(),
           gstin,
           pan: effectivePan,
           created_at: new Date().toISOString(),
         };
         setClients((prev) => [newClient, ...prev]);
-        // Reset form & close
         setName('');
         setGstin('');
         setPan('');
         setIsAddModalOpen(false);
+      } catch (err: any) {
+        setFormError(err?.message || 'Failed to register client entity.');
       }
     });
   };
