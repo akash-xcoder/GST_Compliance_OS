@@ -59,8 +59,8 @@ export default async function ClientReconciliationPage({ params }: PageProps) {
     redirect('/dashboard/clients');
   }
 
-  // 4. Pre-fetch initial reconciliation data (October 2026)
-  const initialReconData = await getReconciliationData(id, 10, 2026);
+  // 4. Pre-fetch initial reconciliation data (October 2023)
+  const initialReconData = await getReconciliationData(id, 10, 2023);
 
   const stateCode = client.gstin.slice(0, 2);
 
@@ -112,7 +112,7 @@ export default async function ClientReconciliationPage({ params }: PageProps) {
         clientName={client.name}
         clientGstin={client.gstin}
         initialPeriodMonth={10}
-        initialPeriodYear={2026}
+        initialPeriodYear={2023}
         initialData={initialReconData}
       />
     </div>

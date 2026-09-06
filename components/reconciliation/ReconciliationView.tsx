@@ -74,14 +74,22 @@ const MONTHS = [
   { value: 3, label: 'March' },
 ];
 
-const YEARS = [2026, 2025, 2024, 2023, 2022];
+const financialYears = [
+  'FY 2026-27', // Add this entry
+  'FY 2025-26',
+  'FY 2024-25',
+  'FY 2023-24',
+  'FY 2022-23',
+];
+
+const YEARS = financialYears.map((fy) => parseInt(fy.replace(/[^0-9]/g, '').slice(0, 4), 10));
 
 export function ReconciliationView({
   clientId,
   clientName,
   clientGstin,
   initialPeriodMonth = 10,
-  initialPeriodYear = 2026,
+  initialPeriodYear = 2023,
   initialData,
 }: ReconciliationViewProps) {
   const [selectedMonth, setSelectedMonth] = useState<number>(initialPeriodMonth);
@@ -230,11 +238,14 @@ export function ReconciliationView({
                 onChange={(e) => setSelectedYear(Number(e.target.value))}
                 className="bg-transparent text-xs font-semibold text-slate-700 px-2 py-1.5 rounded-lg border-0 focus:ring-0 cursor-pointer"
               >
-                {YEARS.map((y) => (
-                  <option key={y} value={y}>
-                    FY {y}-{String(y + 1).slice(-2)}
-                  </option>
-                ))}
+                {financialYears.map((fy) => {
+                  const y = parseInt(fy.replace(/[^0-9]/g, '').slice(0, 4), 10);
+                  return (
+                    <option key={fy} value={y}>
+                      {fy}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 

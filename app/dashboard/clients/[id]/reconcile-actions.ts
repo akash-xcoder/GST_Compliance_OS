@@ -709,7 +709,6 @@ export async function generateExceptionExplanation(
   // Fallback to default seeds if testing or not present in DB
   if (!invoice) {
     const seedPool = [
-      ...getDefaultSeedInvoices(clientId || '7ed6ea05-df68-49a4-bfa4-aeaba84d29ca', 10, 2026),
       ...getDefaultSeedInvoices(clientId || '7ed6ea05-df68-49a4-bfa4-aeaba84d29ca', 10, 2023),
       ...getDefaultSeedInvoices(clientId || '7ed6ea05-df68-49a4-bfa4-aeaba84d29ca', 11, 2023),
     ];
@@ -757,8 +756,7 @@ export async function generateExceptionExplanation(
 
     if (!counterpartInvoice) {
       const seedPool = [
-        ...getDefaultSeedInvoices(invoice.client_id || clientId || '7ed6ea05-df68-49a4-bfa4-aeaba84d29ca', invoice.period_month || 10, invoice.period_year || 2026),
-        ...getDefaultSeedInvoices(clientId || '7ed6ea05-df68-49a4-bfa4-aeaba84d29ca', 10, 2026),
+        ...getDefaultSeedInvoices(invoice.client_id || clientId || '7ed6ea05-df68-49a4-bfa4-aeaba84d29ca', invoice.period_month || 10, invoice.period_year || 2023),
         ...getDefaultSeedInvoices(clientId || '7ed6ea05-df68-49a4-bfa4-aeaba84d29ca', 10, 2023),
       ];
       counterpartInvoice = seedPool.find(

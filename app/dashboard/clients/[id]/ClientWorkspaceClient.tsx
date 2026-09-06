@@ -1084,7 +1084,7 @@ export function ClientWorkspaceClient({
           clientName={client.name}
           clientGstin={client.gstin}
           initialPeriodMonth={10}
-          initialPeriodYear={2026}
+          initialPeriodYear={2023}
         />
       )}
     </div>
