@@ -48,6 +48,14 @@ import { ClientProvider, useClient } from '@/context/ClientContext';
 import { ClientSwitcher } from '@/components/ClientSwitcher';
 import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton';
 
+export const financialYears = [
+  'FY 2026-27', // <--- Add the current financial year here
+  'FY 2025-26',
+  'FY 2024-25',
+  'FY 2023-24',
+  'FY 2022-23',
+];
+
 export default function App() {
   return (
     <ClientProvider>
@@ -78,6 +86,7 @@ function AppInternal() {
     null;
 
   const [currentRoute, setCurrentRoute] = useState<'landing' | 'login' | 'signup' | 'onboarding' | 'dashboard'>('landing');
+  const [activeFY, setActiveFY] = useState(financialYears[0]);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'clients' | 'documents' | 'reconciliation'>('dashboard');
   const [firmName, setFirmName] = useState(contextFirmName || 'Kapur & Associates, CAs');
@@ -1479,8 +1488,18 @@ function AppInternal() {
                                     </div>
 
                                     <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-purple-50 text-purple-700 font-medium text-xs border border-purple-100">
-                                      <Calendar className="w-3 h-3 text-purple-500" />
-                                      <span>FY 2023-24</span>
+                                      <Calendar className="w-3 h-3 text-purple-500 shrink-0" />
+                                      <select
+                                        value={activeFY}
+                                        onChange={(e) => setActiveFY(e.target.value)}
+                                        className="bg-transparent text-purple-700 font-medium text-xs border-none focus:outline-none cursor-pointer pr-1"
+                                      >
+                                        {financialYears.map((fy) => (
+                                          <option key={fy} value={fy} className="bg-white text-slate-800">
+                                            {fy}
+                                          </option>
+                                        ))}
+                                      </select>
                                     </div>
                                   </div>
                                 </div>
@@ -1651,7 +1670,7 @@ function AppInternal() {
                                   <div className="flex items-center justify-between mb-4">
                                     <div>
                                       <h3 className="font-bold text-slate-900 text-base">Filing Compliance Status</h3>
-                                      <p className="text-xs text-slate-500">GSTR filings timeline for FY 2023-24</p>
+                                      <p className="text-xs text-slate-500">GSTR filings timeline for {activeFY}</p>
                                     </div>
                                     <span className="text-xs font-mono font-semibold text-slate-400">
                                       GSTIN: {selectedClient.gstin}

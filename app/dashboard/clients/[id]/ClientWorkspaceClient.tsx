@@ -67,6 +67,14 @@ interface ClientWorkspaceClientProps {
   uploader?: React.ReactNode;
 }
 
+export const financialYears = [
+  'FY 2026-27', // <--- Add the current financial year here
+  'FY 2025-26',
+  'FY 2024-25',
+  'FY 2023-24',
+  'FY 2022-23',
+];
+
 export function ClientWorkspaceClient({
   client,
   firmName = 'CA Practice',
@@ -77,7 +85,7 @@ export function ClientWorkspaceClient({
   const effectiveFirmId = client.firm_id || firmId || '';
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'overview' | 'documents' | 'reconciliation'>('overview');
-  const [activeFY, setActiveFY] = useState('FY 2023-24');
+  const [activeFY, setActiveFY] = useState(financialYears[0]);
   const [documents, setDocuments] = useState<DocumentRecord[]>(initialDocuments);
   const [docFilter, setDocFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -436,8 +444,18 @@ export function ClientWorkspaceClient({
                 </div>
 
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-purple-50 text-purple-700 font-medium text-xs border border-purple-100">
-                  <Calendar className="w-3 h-3 text-purple-500" />
-                  <span>{activeFY}</span>
+                  <Calendar className="w-3 h-3 text-purple-500 shrink-0" />
+                  <select
+                    value={activeFY}
+                    onChange={(e) => setActiveFY(e.target.value)}
+                    className="bg-transparent text-purple-700 font-medium text-xs border-none focus:outline-none cursor-pointer pr-1"
+                  >
+                    {financialYears.map((fy) => (
+                      <option key={fy} value={fy} className="bg-white text-slate-800">
+                        {fy}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </div>

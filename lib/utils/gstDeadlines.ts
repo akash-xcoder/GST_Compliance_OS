@@ -573,3 +573,11 @@ export function getFallbackStatutoryFilings(clients: Array<{ id: string; name: s
 
   return filings;
 }
+
+export const financialYears = [
+  'FY 2026-27', // <--- Add the current financial year here
+  'FY 2025-26',
+  'FY 2024-25',
+  'FY 2023-24',
+  'FY 2022-23',
+];
