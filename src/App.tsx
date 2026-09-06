@@ -169,24 +169,12 @@ function AppInternal() {
         return;
       }
 
-      if (data?.user?.id) {
+      // Let the database trigger (handle_new_user) auto-provision the firm and firm_users record!
+      if (data?.user) {
         setCurrentUser(data.user);
-        const { data: firmData } = await supabase
-          .from('firms')
-          .insert({ name: signupFirmName.trim() })
-          .select('id')
-          .single();
-
-        if (firmData?.id) {
-          await supabase.from('firm_users').insert({
-            firm_id: firmData.id,
-            user_id: data.user.id,
-            role: 'owner',
-          });
-          setRealFirmId(firmData.id);
-        }
       }
-      setCurrentRoute('onboarding');
+      
+      setCurrentRoute('dashboard');
     } catch (err: any) {
       setSignupError(err?.message || 'Registration failed.');
     } finally {
