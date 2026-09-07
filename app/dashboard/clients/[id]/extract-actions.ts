@@ -40,103 +40,97 @@ async function safeRevalidatePath(path: string) {
 export async function extractDocumentData(documentId: string): Promise<ExtractResult> {
   const supabase = await createClient();
 
-  // 1 & 2. Get user and firm
-  const { data: { user } } = await supabase.auth.getUser();
-  let firmId = 'a763af2b-c7ea-4a56-b448-513df5ca0dfa';
-  if (user) {
-    const { data: membership } = await supabase.from('firm_users').select('firm_id').eq('user_id', user.id).maybeSingle();
-    if (membership?.firm_id) firmId = membership.firm_id;
-  }
-
-  // 3. Fetch Document Metadata
-  let { data: doc } = await supabase.from('documents').select('*').eq('id', documentId).maybeSingle();
+  // 1. Fetch Document Metadata
+  const { data: doc } = await supabase.from('documents').select('*').eq('id', documentId).maybeSingle();
   if (!doc) throw new Error("Document not found in database.");
 
+  // Set to processing
   await supabase.from('documents').update({ status: 'processing' }).eq('id', documentId);
 
   try {
-    // 4. Download file from Storage
+    // 2. Download file from Storage
     const storagePath = doc.storage_path || doc.file_path || '';
-    let csvText = '';
+    if (!storagePath) throw new Error("No storage path found for this document.");
+
+    const { data: fileBlob, error: downloadError } = await supabase.storage.from('compliance-documents').download(storagePath);
+    if (downloadError) throw new Error(`Storage download failed: ${downloadError.message}`);
     
-    if (storagePath) {
-      const { data: fileBlob, error: downloadError } = await supabase.storage.from('compliance-documents').download(storagePath);
-      if (downloadError) throw new Error(`Storage download failed: ${downloadError.message}`);
-      if (fileBlob) {
-        csvText = await fileBlob.text(); // Read directly as text for CSV
-      }
+    const csvText = await fileBlob.text();
+    if (!csvText || csvText.trim() === '') {
+       throw new Error("The uploaded CSV file is completely empty (0 bytes).");
     }
 
-    // 5. Hardcode source based on doc_type
-    const normalizedDocType = (doc.doc_type || doc.document_type || '').toLowerCase().replace(/[^a-z0-9]/g, '_');
-    let source: 'books' | 'gstr_2b' = 'books';
-    if (normalizedDocType === 'gstr_2b' || normalizedDocType.includes('2b')) {
-      source = 'gstr_2b';
+    // 3. Robust CSV Parsing (Handles Windows \r\n and Mac/Linux \n)
+    const lines = csvText.split(/\r?\n/).filter(line => line.trim().length > 0);
+    
+    if (lines.length <= 1) {
+       throw new Error("CSV contains no data rows (only headers).");
     }
 
-    // 6. Basic deterministic CSV parsing (Bypassing AI for .csv files)
     let extractedInvoices: any[] = [];
     
-    if (storagePath.toLowerCase().endsWith('.csv') && csvText) {
-      // Very basic manual CSV split for the exact format of messy_gst_invoice_test.csv
-      const lines = csvText.split('\n').filter(line => line.trim().length > 0);
-      const headers = lines[0].split(',');
+    // Parse rows (skipping header at index 0)
+    for (let i = 1; i < lines.length; i++) {
+      // Clean up quotes and split by comma
+      const cols = lines[i].split(',').map(col => col.trim().replace(/^"|"$/g, '')); 
       
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',');
-        if (cols.length >= 8) {
-          extractedInvoices.push({
-            invoice_number: cols[0].trim(),
-            invoice_date: cols[1].trim(),
-            supplier_gstin: cols[2].trim(),
-            taxable_value: parseFloat(cols[3]) || 0,
-            cgst: parseFloat(cols[4]) || 0,
-            sgst: parseFloat(cols[5]) || 0,
-            igst: parseFloat(cols[6]) || 0,
-            total_amount: parseFloat(cols[7]) || 0
-          });
-        }
-      }
-    } else {
-       throw new Error("Only CSV extraction is supported in this updated strict deterministic bypass.");
-    }
-
-    // 7. Bulk insert extracted invoices into `invoices` table
-    if (extractedInvoices.length > 0) {
-      const pMonth = Number(doc.period_month ?? 9);
-      const pYear = Number(doc.period_year ?? 2026);
-
-      const invoiceRows = extractedInvoices.map((inv) => ({
-        firm_id: doc.firm_id,
-        client_id: doc.client_id,
-        invoice_number: inv.invoice_number,
-        supplier_gstin: inv.supplier_gstin.toUpperCase().trim(),
-        invoice_date: inv.invoice_date,
-        taxable_value: Number(inv.taxable_value),
-        cgst: Number(inv.cgst || 0),
-        sgst: Number(inv.sgst || 0),
-        igst: Number(inv.igst || 0),
-        total_amount: Number(inv.total_amount),
-        source: source,
-        period_month: pMonth,
-        period_year: pYear,
-      }));
-
-      // Insert directly
-      const insertResult = await supabase.from('invoices').insert(invoiceRows);
-      
-      if (insertResult.error) {
-        throw new Error(`DATABASE INSERT FAILED: ${insertResult.error.message}`);
+      if (cols.length >= 8 && cols[0]) {
+        extractedInvoices.push({
+          invoice_number: cols[0],
+          invoice_date: cols[1],
+          supplier_gstin: cols[2] || 'UNKNOWN',
+          taxable_value: parseFloat(cols[3]) || 0,
+          cgst: parseFloat(cols[4]) || 0,
+          sgst: parseFloat(cols[5]) || 0,
+          igst: parseFloat(cols[6]) || 0,
+          total_amount: parseFloat(cols[7]) || 0,
+        });
       }
     }
 
-    // 8. Update document status to 'extracted'
+    if (extractedInvoices.length === 0) {
+       throw new Error("Failed to parse any valid invoice rows from the CSV. Check column format.");
+    }
+
+    // 4. Source mapping
+    const normalizedDocType = (doc.doc_type || doc.document_type || '').toLowerCase();
+    const source = normalizedDocType.includes('2b') ? 'gstr_2b' : 'books';
+    const pMonth = Number(doc.period_month ?? 9);
+    const pYear = Number(doc.period_year ?? 2026);
+
+    // 5. Build Insert Payload
+    const invoiceRows = extractedInvoices.map((inv) => ({
+      firm_id: doc.firm_id,
+      client_id: doc.client_id,
+      invoice_number: inv.invoice_number,
+      supplier_gstin: inv.supplier_gstin.toUpperCase(),
+      invoice_date: inv.invoice_date,
+      taxable_value: inv.taxable_value,
+      cgst: inv.cgst,
+      sgst: inv.sgst,
+      igst: inv.igst,
+      total_amount: inv.total_amount,
+      source: source,
+      period_month: pMonth,
+      period_year: pYear,
+      // Leaving recon_status out completely so it doesn't trigger the enum error we saw earlier
+    }));
+
+    // 6. Insert directly into Supabase
+    const insertResult = await supabase.from('invoices').insert(invoiceRows);
+    
+    if (insertResult.error) {
+      throw new Error(`DATABASE INSERT FAILED: ${insertResult.error.message}`);
+    }
+
+    // 7. Update status to Success
     await supabase.from('documents').update({ status: 'extracted' }).eq('id', documentId);
 
     return { success: true, extractedCount: extractedInvoices.length, source };
 
   } catch (err: any) {
     console.error('Extraction error:', err);
+    // Force the status to 'failed' so the UI stops lying about it being "Extracted"
     await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
     return { success: false, error: err?.message };
   }
