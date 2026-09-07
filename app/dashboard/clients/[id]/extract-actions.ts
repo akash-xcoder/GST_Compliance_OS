@@ -69,15 +69,30 @@ export async function extractDocumentData(documentId: string): Promise<ExtractRe
 
     let extractedInvoices: any[] = [];
     
+    // Helper to convert DD/MM/YYYY or DD-MM-YY to YYYY-MM-DD
+    const normalizeDate = (d: string) => {
+      if (!d) return null;
+      const clean = d.replace(/\//g, '-');
+      const parts = clean.split('-');
+      if (parts.length === 3) {
+        if (parts[0].length === 4) return clean; // Already YYYY-MM-DD
+        const day = parts[0].padStart(2, '0');
+        const month = parts[1].padStart(2, '0');
+        let year = parts[2];
+        if (year.length === 2) year = '20' + year;
+        return `${year}-${month}-${day}`;
+      }
+      return d;
+    };
+
     // Parse rows (skipping header at index 0)
     for (let i = 1; i < lines.length; i++) {
-      // Clean up quotes and split by comma
       const cols = lines[i].split(',').map(col => col.trim().replace(/^"|"$/g, '')); 
       
       if (cols.length >= 8 && cols[0]) {
         extractedInvoices.push({
           invoice_number: cols[0],
-          invoice_date: cols[1],
+          invoice_date: normalizeDate(cols[1]), // <--- Formats the date automatically!
           supplier_gstin: cols[2] || 'UNKNOWN',
           taxable_value: parseFloat(cols[3]) || 0,
           cgst: parseFloat(cols[4]) || 0,
