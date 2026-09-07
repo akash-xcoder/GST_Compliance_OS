@@ -132,6 +132,8 @@ export async function extractDocumentData(documentId: string): Promise<ExtractRe
     }));
 
     // 6. Insert directly into Supabase
+    console.log("🚀 READY TO INSERT ROWS:", invoiceRows.length);
+    console.log("📝 FIRST ROW PREVIEW:", invoiceRows[0]);
     const insertResult = await supabase.from('invoices').insert(invoiceRows);
     
     if (insertResult.error) {
