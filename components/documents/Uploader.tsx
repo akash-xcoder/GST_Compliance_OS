@@ -236,21 +236,25 @@ export function Uploader({
       let finalPath = storagePath;
       let storageUploaded = false;
       try {
+        // FIX: Convert File to ArrayBuffer to prevent the Supabase 0KB upload bug
+        const fileBuffer = await file.arrayBuffer(); 
+        
         const { data, error } = await supabase.storage
           .from('compliance-documents')
-          .upload(storagePath, file, {
+          .upload(storagePath, fileBuffer, {
             cacheControl: '3600',
-            upsert: false,
+            upsert: true, // Set to true to overwrite any broken 0KB ghosts
+            contentType: file.type || 'text/csv', // Explicitly define content type
           });
 
         if (!error && data?.path) {
           finalPath = data.path;
           storageUploaded = true;
         } else if (error) {
-          console.warn(`Supabase Storage upload notice (RLS or unauthenticated session): ${error.message} (Bucket: compliance-documents, Path: ${storagePath})`);
+          console.warn(`Supabase Storage upload error: ${error.message}`);
         }
       } catch (storageErr: any) {
-        console.warn(`Supabase Storage direct upload notice (RLS or CORS): ${storageErr?.message}`);
+        console.warn(`Supabase Storage direct upload exception: ${storageErr?.message}`);
       }
 
       // Cache file locally in window memory so AI extraction can process it immediately
